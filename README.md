@@ -1,4 +1,4 @@
-# tri-modal-decomp
+# modal-decomp
 
 A **pure-Python** collection of simple scripts (no MPI, minimal dependencies) for extracting coherent flow structures via modal decompositions:
 
