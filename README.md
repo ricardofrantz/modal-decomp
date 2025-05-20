@@ -3,11 +3,8 @@
 A **pure-Python** collection of simple scripts (no MPI, minimal dependencies) for extracting coherent flow structures via three complementary modal decompositions:
 
 - **Bispectral Mode Decomposition (BSMD)**  
-  Implements Schmidt (2020) to uncover third-order, phase-coupled structures in turbulent data.  
 - **Spectral Proper Orthogonal Decomposition (SPOD)**  
-  Identifies energy-optimal spatial modes as functions of frequency, revealing dominant oscillatory patterns.  
 - **Time-Optimal Dependent Modes (TOD)**  
-  Constructs temporally localized basis functions that minimize reconstruction error for transient events.
 
 ---
 
