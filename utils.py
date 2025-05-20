@@ -5,16 +5,8 @@ Common utilities for modal decomposition methods.
 All imports are centralized here to keep the code clean and consistent.
 """
 
-import os, re, time
-import h5py
-import numpy as np
-import matplotlib.pyplot as plt
-
-from scipy import fft
-from scipy.signal import find_peaks
-from scipy.linalg import eig
-
-os.environ['OS_ACTIVITY_MODE'] = 'disable'  # suppress macOS IMKClient logs
+from configs import *
+from fft_backends import get_fft_func
 
 def load_jetles_data(file_path):
     """Load and preprocess data from HDF5 file with JetLES format."""
@@ -214,7 +206,8 @@ def blocksfft(q, nfft, nblocks, novlap, blockwise_mean=False, normvar=False, win
             block_var[block_var < 4 * np.finfo(float).eps] = 1.0 # Avoid division by zero
             block_centered = block_centered / block_var
         # Apply window and FFT
-        q_hat[:, :, iblk] = cw / nfft * fft.fft(block_centered * window_broadcast, axis=0)
+        fft_func = get_fft_func()
+        q_hat[:, :, iblk] = cw / nfft * fft_func(block_centered * window_broadcast, axis=0)
     return q_hat
 
 

@@ -19,6 +19,7 @@ Method:
   5. Spatial modes:
        Φ1_j = Σ_b a_b^* B_jb,  Φ2_j = Σ_b a_b^* A_jb.
 """
+# All core imports and configs are available via utils
 from utils import *
 
 # Standard static triad list
@@ -36,22 +37,34 @@ ALL_TRIADS = [
     (4,  4,  8)
 ]
 
-class BSMDAnalyzer:
+class BSMDAnalyzer(BaseAnalyzer):
     """
     Class for performing Bispectral SPOD (BSMD) analysis.
     """
-    def __init__(
-        self,
-        file_path,
-        nfft=128,
-        overlap=0.5,
-        output_path="./preprocess",  # For HDF files
-        figures_path="./figs",       # For PNG files
-        data_loader=None,
-        spatial_weight_type='auto',
-        use_static_triads=True,
-        static_triads=ALL_TRIADS
-    ):
+    def __init__(self,
+                 file_path,
+                 nfft=128,
+                 overlap=0.5,
+                 results_dir="./preprocess",
+                 figures_dir="./figs",
+                 data_loader=None,
+                 spatial_weight_type='auto',
+                 use_static_triads=True,
+                 static_triads=ALL_TRIADS):
+        super().__init__(file_path=file_path,
+                         nfft=nfft,
+                         overlap=overlap,
+                         results_dir=results_dir,
+                         figures_dir=figures_dir,
+                         data_loader=data_loader,
+                         spatial_weight_type=spatial_weight_type)
+        self.use_static_triads = use_static_triads
+        self.static_triads = static_triads
+        self.triads = []
+        self.a = np.array([])
+        self.lambda_vals = np.array([])
+        self.Phi1 = np.array([])
+        self.Phi2 = np.array([])
         """
         Initialize the BSMD analyzer.
 
@@ -59,7 +72,8 @@ class BSMDAnalyzer:
             file_path (str): Path to the HDF5 or .mat data file.
             nfft (int): Number of snapshots per FFT block.
             overlap (float): Overlap fraction between blocks (0–1).
-            output_path (str): Directory for HDF5 results.
+            results_dir (str): Directory for HDF5 results.
+            figures_dir (str): Directory for figures.
             data_loader (callable): Function to load data (default: load_mat_data).
             spatial_weight_type (str): 'auto', 'uniform', or 'polar'.
             use_static_triads (bool): Use predefined static triads (default: True).
@@ -68,16 +82,16 @@ class BSMDAnalyzer:
         self.file_path = file_path
         self.nfft = nfft
         self.overlap = overlap
-        self.output_path = output_path
-        self.figures_path = figures_path
+        self.results_dir = results_dir
+        self.figures_dir = figures_dir
         self.data_loader = data_loader or load_mat_data
         self.spatial_weight_type = spatial_weight_type
         self.use_static_triads = use_static_triads
         self.static_triads = static_triads
         
         # Ensure output directories exist
-        os.makedirs(self.output_path, exist_ok=True)
-        os.makedirs(self.figures_path, exist_ok=True)
+        os.makedirs(self.results_dir, exist_ok=True)
+        os.makedirs(self.figures_dir, exist_ok=True)
 
         # Derive base name for outputs
         base = os.path.basename(file_path)
@@ -97,40 +111,10 @@ class BSMDAnalyzer:
         self.Phi2 = np.array([])
 
     def load_and_preprocess(self):
-        """Load data, set weights, and compute number of blocks."""
-        d = self.data_loader(self.file_path)
-        self.data = d
-        self.fs = 1.0 / d['dt']
-        # Spatial weights
-        if self.spatial_weight_type == 'polar':
-            self.W = calculate_polar_weights(d['x'], d['y'])
-        elif self.spatial_weight_type == 'uniform':
-            self.W = calculate_uniform_weights(d['x'], d['y'])
-        else:
-            # Auto: choose polar if radial coordinate present
-            if 'r' in d:
-                self.W = calculate_polar_weights(d['x'], d['y'])
-            else:
-                self.W = calculate_uniform_weights(d['x'], d['y'])
-        # Number of blocks via Welch parameters
-        Ns = d['Ns']
-        step = self.nfft - self.novlap
-        self.nblocks = 1 + (Ns - self.nfft) // step
+        super().load_and_preprocess()
 
     def compute_fft_blocks(self):
-        """Compute blocked FFT (time→frequency) of the data."""
-        q = self.data['q']  # shape [time, space]
-        self.qhat = blocksfft(
-            q,
-            self.nfft,
-            self.nblocks,
-            self.novlap,
-            blockwise_mean=False,
-            normvar=False,
-            window_norm='power',
-            window_type='hamming'
-        )
-        # qhat shape: [frequency, space, block]
+        super().compute_fft_blocks()
 
     def perform_BSMD(self):
         """
@@ -199,8 +183,8 @@ class BSMDAnalyzer:
         if fname is None:
             fname = f"{self.data_root}_BSMD.h5"
         # Ensure output directory exists
-        os.makedirs(self.output_path, exist_ok=True)
-        fp = os.path.join(self.output_path, fname)
+        os.makedirs(self.results_dir, exist_ok=True)
+        fp = os.path.join(self.results_dir, fname)
         with h5py.File(fp, 'w') as f:
             f.create_dataset('triads', data=np.array(self.triads))
             f.create_dataset('lambda_real', data=self.lambda_vals.real)
@@ -238,8 +222,8 @@ if __name__ == '__main__':
         file_path=data_file,
         nfft=128,
         overlap=0.5,
-        output_path='./preprocess',  # HDF files go here
-        figures_path='./figs',       # PNG files go here
+        results_dir='./preprocess',  # HDF files go here
+        figures_dir='./figs',       # PNG files go here
         data_loader=loader,
         spatial_weight_type=spatial_weight,
         use_static_triads=True,
@@ -457,12 +441,10 @@ if __name__ == '__main__':
     ax2.legend()
 
     # Set zoom plot limits
-    ax2.set_xlim(0, zoom_St1_max)
-    ax2.set_ylim(zoom_St2_min, zoom_St2_max)
 
-    # Finalize and save the plot
-    plt.tight_layout()
-    output_file = os.path.join(analyzer.figures_path, f"{analyzer.data_root}_BSMD_eig_St1St2_plane.png")
-    plt.savefig(output_file)
-    plt.close()
-    print(f"Plot saved to {output_file}")
+# Finalize and save the plot
+plt.tight_layout()
+output_file = os.path.join(analyzer.figures_dir, f"{analyzer.data_root}_BSMD_eig_St1St2_plane.png")
+plt.savefig(output_file)
+plt.close()
+print(f"Plot saved to {output_file}")

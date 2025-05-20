@@ -8,9 +8,10 @@ Reference codes:
     - https://github.com/SpectralPOD/spod_matlab/tree/master
     - https://github.com/MathEXLab/PySPOD/blob/main/tutorials/tutorial1/tutorial1.ipynb
 """
+# All core imports and configs are available via utils
 from utils import *
 
-class SPODAnalyzer:
+class SPODAnalyzer(BaseAnalyzer):
     """Class for performing Spectral Proper Orthogonal Decomposition (SPOD) analysis.
 
     **Expected Input Data Structure:**
@@ -42,20 +43,38 @@ class SPODAnalyzer:
     the other metadata to `self.data`.
     """
     
-    def __init__(
-        self,
-        file_path,
-        nfft=128,
-        overlap=0.5,
-        results_dir="./preprocess",  # For HDF files
-        figures_dir="./figs",        # For PNG files
-        blockwise_mean=False,
-        normvar=False,
-        window_norm='power',
-        window_type='hamming',
-        data_loader=None,
-        spatial_weight_type='auto'
-    ):
+    def __init__(self,
+                 file_path,
+                 nfft=128,
+                 overlap=0.5,
+                 results_dir=RESULTS_DIR,
+                 figures_dir=FIGURES_DIR,
+                 blockwise_mean=False,
+                 normvar=False,
+                 window_norm='power',
+                 window_type='hamming',
+                 data_loader=None,
+                 spatial_weight_type='auto'):
+        super().__init__(file_path=file_path,
+                         nfft=nfft,
+                         overlap=overlap,
+                         results_dir=results_dir,
+                         figures_dir=figures_dir,
+                         data_loader=data_loader,
+                         spatial_weight_type=spatial_weight_type)
+        self.blockwise_mean = blockwise_mean
+        self.normvar = normvar
+        self.window_norm = window_norm
+        self.window_type = window_type
+        # SPOD-specific fields
+        self.phi = np.array([])
+        self.lambda_values = np.array([])
+        self.frequencies = np.array([])
+        self.psi = np.array([])
+        self.St = np.array([])
+        self.dst = 0.0
+        self.L = 1.0
+        self.U = 1.0
         """Initialize the SPOD analyzer.
 
         Args:
@@ -71,111 +90,25 @@ class SPODAnalyzer:
             data_loader (callable, optional): Custom data loading function.
             spatial_weight_type (str): Type of spatial weighting ('polar', 'uniform', 'auto').
         """
-        self.file_path = file_path
-        self.nfft = nfft
-        self.overlap = overlap
-        self.output_path = results_dir  # For backward compatibility
-        self.figures_path = figures_dir  # For backward compatibility
-        self.results_dir = results_dir
-        self.figures_dir = figures_dir
-        self.blockwise_mean = blockwise_mean
-        self.normvar = normvar
-        self.window_norm = window_norm
-        self.window_type = window_type
-        self.data_loader = data_loader or load_jetles_data
-        self.spatial_weight_type = spatial_weight_type
-        self.data = {}
-        self.phi = np.array([])
-        self.lambda_values = np.array([])
-        self.frequencies = np.array([])
-        self.W = np.array([])
-        self.fs = 0.0
-        self.nblocks = 0
-        
-        # Ensure output directories exist
-        os.makedirs(self.results_dir, exist_ok=True)
-        os.makedirs(self.figures_dir, exist_ok=True)
-        
-        # Extract root name for output files (e.g., 'cavityPIV' from './cavityPIV.mat')
-        base = os.path.basename(file_path)
-        self.data_root = re.sub(r"\.[^.]*$", "", base)
-        
-        # Initialize parameters that will be computed during analysis
-        self.data = {}           # Dictionary to hold loaded data (q, x, y, dt, etc.)
-        self.W = np.array([])    # Spatial integration weights
-        self.novlap = int(overlap * nfft) # Number of overlapping snapshots
-        self.nblocks = 0         # Number of blocks for FFT
-        self.fs = 0.0            # Sampling frequency (1/dt)
-        self.St = np.array([])   # Strouhal number vector
-        self.dst = 0.0           # Strouhal resolution (delta St)
-        self.qhat = np.array([]) # Blocked FFT coefficients [frequency, space, block]
-        self.lambda_values = np.array([]) # SPOD eigenvalues [frequency, mode]
-        self.phi = np.array([])  # SPOD spatial modes [frequency, space, mode]
-        self.psi = np.array([])  # Time coefficients [frequency, block, mode]
-        self.L = 1.0
-        self.U = 1.0
     
     def load_and_preprocess(self):
-        """Load data, calculate spatial weights, and SPOD parameters."""
-        # Load data (q, x, y, dt, etc.) from HDF5 file
-        self.data = self.data_loader(self.file_path)
-        
-        # Choose spatial weights
-        if self.spatial_weight_type == 'auto':
-            if 'cavity' in self.file_path.lower():
-                # Cavity: use uniform weights (rectangular grid)
-                self.W = calculate_uniform_weights(self.data['x'], self.data['y'])
-                print("Cavity case: Using uniform spatial weights (rectangular grid).")
-            else:
-                # Jet: use polar weights (cylindrical grid)
-                self.W = calculate_polar_weights(self.data['x'], self.data['y'])
-                print("Jet/other case: Using polar (cylindrical) spatial weights.")
-        elif self.spatial_weight_type == 'uniform':
-            self.W = calculate_uniform_weights(self.data['x'], self.data['y'])
-            print("Spatial weights: uniform (rectangular grid).")
-        elif self.spatial_weight_type == 'polar':
-            self.W = calculate_polar_weights(self.data['x'], self.data['y'])
-            print("Spatial weights: polar (cylindrical grid).")
-        else:
-            raise ValueError(f"Unknown spatial_weight_type: {self.spatial_weight_type}")
-        
+        super().load_and_preprocess()
         # Set normalization constants for Strouhal number
         if 'cavity' in self.file_path.lower():
-            self.L = 0.0381  # [m], cavity length
-            self.U = 230.0   # [m/s], free-stream velocity
+            self.L = 0.0381
+            self.U = 230.0
             print(f"Cavity case detected: Using L={self.L} m, U={self.U} m/s for Strouhal normalization.")
         else:
             self.L = 1.0
             self.U = 1.0
             print("Jet case or unknown: Using L=1, U=1 for Strouhal normalization.")
-        
-        # Calculate derived SPOD parameters
-        self.nblocks = int(np.ceil((self.data['Ns'] - self.novlap) / (self.nfft - self.novlap)))
+        # Calculate Strouhal vector
         self.fs = 1 / self.data['dt']
         f = np.linspace(0, self.fs - self.fs/self.nfft, self.nfft)
         St = f * self.L / self.U
-        self.St = St[0 : self.nfft // 2 + 1]  # One-sided Strouhal vector (normalized)
-        self.dst = self.St[1] - self.St[0] 
-        self.strouhal = St  # Store full Strouhal vector if needed
-        print("SPOD Parameters:")
-        print(f"Number of snapshots: {self.data['Ns']}, Block size: {self.nfft}, "
-              f"Overlap: {self.overlap} ({self.novlap} points), Number of blocks: {self.nblocks}")
-        print(f"Strouhal sampling (max St): {self.St[-1]:.4f}, dSt: {self.dst:.4f}")
-    
-    def compute_fft_blocks(self):
-        """Compute blocked FFT using the blocksfft function."""
-        if 'q' not in self.data:
-            raise ValueError("Data not loaded. Call load_and_preprocess() first.")
-        
-        print(f"Computing FFT with {self.nblocks} blocks...")
-        self.qhat = blocksfft(
-            self.data['q'], self.nfft, self.nblocks, self.novlap,
-            blockwise_mean=self.blockwise_mean,
-            normvar=self.normvar,
-            window_norm=self.window_norm,
-            window_type=self.window_type
-        )
-        print("FFT computation complete.")
+        self.St = St[0 : self.nfft // 2 + 1]
+        self.dst = self.St[1] - self.St[0]
+        self.strouhal = St
     
     def perform_spod(self):
         """Perform SPOD analysis (eigenvalue decomposition) for each frequency."""
@@ -221,28 +154,17 @@ class SPODAnalyzer:
         print(f"SPOD eigenvalue decomposition completed in {time.time() - start_time:.2f} seconds")
     
     def save_results(self):
-        """Save SPOD modes, eigenvalues, frequencies, and parameters to an HDF5 file."""
         if self.phi.size == 0 or self.lambda_values.size == 0:
             raise ValueError("SPOD not performed. Call perform_spod() first.")
-        
-        # Ensure results directory exists
-        os.makedirs(self.results_dir, exist_ok=True)
-        
-        # Construct full path for the output file
         save_name = f"{self.data_root}_Nfft{self.nfft}_ovlap{self.overlap}_{self.data['Ns']}snapshots.hdf5"
         save_path = os.path.join(self.results_dir, save_name)
         print(f"Saving results to {save_path}")
-        
         with h5py.File(save_path, "w") as fsnap:
-            # Create datasets for modes, eigenvalues, frequencies, and grid
-            # Using gzip compression for efficiency
-            fsnap.create_dataset("Phi", data=self.phi, compression="gzip") # Modes [freq, space, mode]
-            fsnap.create_dataset("Lambda", data=self.lambda_values, compression="gzip") # Eigenvalues [freq, mode]
-            fsnap.create_dataset("St", data=self.St, compression="gzip") # One-sided Strouhal vector [freq]
-            fsnap.create_dataset("x", data=self.data['x'], compression="gzip") # Axial coordinates
-            fsnap.create_dataset("y", data=self.data['y'], compression="gzip") # Radial coordinates
-
-            # Save key scalar parameters as attributes or small datasets
+            fsnap.create_dataset("Phi", data=self.phi, compression="gzip")
+            fsnap.create_dataset("Lambda", data=self.lambda_values, compression="gzip")
+            fsnap.create_dataset("St", data=self.St, compression="gzip")
+            fsnap.create_dataset("x", data=self.data['x'], compression="gzip")
+            fsnap.create_dataset("y", data=self.data['y'], compression="gzip")
             fsnap.attrs["Nfft"] = self.nfft
             fsnap.attrs["overlap"] = self.overlap
             fsnap.attrs["Ns"] = self.data['Ns']
@@ -251,39 +173,31 @@ class SPODAnalyzer:
             fsnap.attrs["dt"] = self.data['dt']
     
     def plot_eigenvalues(self, n_modes=10, highlight_St=None):
-        """Plot the SPOD eigenvalue spectrum (energy vs. Strouhal number) for leading modes.
+        """Plot the SPOD eigenvalue spectrum (energy vs. St) for leading modes.
         Optionally highlight a specific St value (e.g., the selected mode peak)."""
         if self.lambda_values.size == 0:
             raise ValueError("SPOD not performed. Call perform_spod() first.")
-        
         print("Plotting SPOD eigenvalues...")
-        
         plt.figure(figsize=(10, 6))
-        plt.rc("text", usetex=False)
-        plt.rc("font", family="serif", size=12)
-        
+        plt.rc("text", usetex=USE_LATEX)
+        plt.rc("font", family=FONT_FAMILY, size=FONT_SIZE)
         n_modes_to_plot = min(n_modes, self.lambda_values.shape[1])
         for i in range(n_modes_to_plot):
-            plt.loglog(self.St, self.lambda_values[:, i], 
+            plt.loglog(self.St, self.lambda_values[:, i],
                        label=f"Mode {i+1}", marker='o', markersize=3, linestyle='-')
-        
-        # Highlight the selected St peak if provided
         if highlight_St is not None:
             idx = np.argmin(np.abs(self.St - highlight_St))
             plt.scatter(self.St[idx], self.lambda_values[idx, 0],
                         color='red', s=80, edgecolor='k', zorder=10, label=f"Peak St={self.St[idx]:.3f}")
-        
         plt.legend()
-        plt.xlabel(r"Strouhal number (St)")
+        plt.xlabel(r"St")
         plt.ylabel(r"SPOD Eigenvalue $\lambda$")
         plt.title(r"SPOD Eigenvalue Spectrum vs. St")
         plt.grid(True, which="both", ls="--", alpha=0.5)
         plt.tight_layout()
-        
-        # Ensure figures directory exists
         os.makedirs(self.figures_dir, exist_ok=True)
-        filename = f"{self.data_root}_eigenvalues_Nfft{self.nfft}_ovlap{self.overlap}_{self.data['Ns']}snapshots.png"
-        plt.savefig(os.path.join(self.figures_dir, os.path.basename(filename)), bbox_inches="tight", dpi=300)
+        filename = f"{self.data_root}_eigenvalues_Nfft{self.nfft}_ovlap{self.overlap}_{self.data['Ns']}snapshots.{FIG_FORMAT}"
+        plt.savefig(os.path.join(self.figures_dir, os.path.basename(filename)), bbox_inches="tight", dpi=FIG_DPI, format=FIG_FORMAT)
         plt.close()
         print(f"Eigenvalue plot saved to {filename}")
     
