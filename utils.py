@@ -8,6 +8,7 @@ All imports are centralized here to keep the code clean and consistent.
 from configs import *
 from fft_backends import get_fft_func
 
+
 def make_result_filename(root, nfft, overlap, Ns, analysis):
     """
     Generate a harmonized result filename for analysis outputs.
@@ -22,6 +23,7 @@ def make_result_filename(root, nfft, overlap, Ns, analysis):
     """
     return f"{root}_Nfft{nfft}_ovlap{overlap}_{Ns}snapshots_{analysis}.hdf5"
 
+
 def load_jetles_data(file_path):
     """Load and preprocess data from HDF5 file with JetLES format."""
     print(f"Loading data from {file_path}")
@@ -31,23 +33,23 @@ def load_jetles_data(file_path):
         x = fread["x"][:, 0]  # x-coordinates (axial)
         y = fread["r"][0, :]  # y-coordinates (radial)
         dt = fread["dt"][0][0]  # time step
-        
+
     # Transpose q: original shape (Nx, Ny, Ns) -> (Ns, Nx, Ny)
     # Reshape q: flatten spatial dimensions -> (Ns, Nx * Ny) for SPOD
     q = np.transpose(q, (2, 0, 1))
     Nx, Ny = x.shape[0], y.shape[0]
     Ns = q.shape[0]  # number of snapshots (time steps)
     q_reshaped = q.reshape(Ns, Nx * Ny)  # Use reshape for safety
-    
+
     # Return all the data in a dictionary for easy access
     return {
-        'q': q_reshaped,  # Data reshaped for SPOD: [time, space]
-        'x': x,           # Axial coordinates
-        'y': y,           # Radial coordinates
-        'dt': dt,         # Time step
-        'Nx': Nx,         # Number of points in x
-        'Ny': Ny,         # Number of points in y (radial)
-        'Ns': Ns          # Number of snapshots
+        "q": q_reshaped,  # Data reshaped for SPOD: [time, space]
+        "x": x,  # Axial coordinates
+        "y": y,  # Radial coordinates
+        "dt": dt,  # Time step
+        "Nx": Nx,  # Number of points in x
+        "Ny": Ny,  # Number of points in y (radial)
+        "Ns": Ns,  # Number of snapshots
     }
 
 
@@ -65,63 +67,55 @@ def load_mat_data(file_path):
         y = fread["y"][:]
         dt = np.array(fread["dt"])[0][0] if "dt" in fread else 1.0
     print(f"Loaded variable shape: q={q.shape}, x={x.shape}, y={y.shape}")
-    
+
     # If x and y are 2D (meshgrid), reduce to 1D vectors
     if x.ndim == 2:
-        x_vec = x[:,0]
+        x_vec = x[:, 0]
     else:
         x_vec = x
     if y.ndim == 2:
-        y_vec = y[0,:]
+        y_vec = y[0, :]
     else:
         y_vec = y
     Nx, Ny = x_vec.shape[0], y_vec.shape[0]
-    
+
     # Special handling for (Nx, Ny, Ns)
     if q.shape == (Nx, Ny, q.shape[2]):
         Ns = q.shape[2]
         q = np.transpose(q, (2, 0, 1))  # (Ns, Nx, Ny)
-        q_reshaped = q.reshape(Ns, Nx*Ny)
+        q_reshaped = q.reshape(Ns, Nx * Ny)
         print(f"Data interpreted as (Nx, Ny, Ns) and transposed to (Ns, Nx, Ny) = {q.shape}")
     # Standard (Ns, Nx, Ny)
     elif q.shape == (q.shape[0], Nx, Ny):
         Ns = q.shape[0]
-        q_reshaped = q.reshape(Ns, Nx*Ny)
+        q_reshaped = q.reshape(Ns, Nx * Ny)
         print(f"Data interpreted as (Ns, Nx, Ny) = {q.shape}")
     # Try all permutations if above does not match
     else:
-        for axes in [(0,1,2),(2,0,1),(2,1,0),(0,2,1),(1,0,2),(1,2,0)]:
+        for axes in [(0, 1, 2), (2, 0, 1), (2, 1, 0), (0, 2, 1), (1, 0, 2), (1, 2, 0)]:
             try:
                 arr = np.transpose(q, axes)
                 Ns, Nxx, Nyy = arr.shape
                 if Nxx == Nx and Nyy == Ny:
-                    q_reshaped = arr.reshape(Ns, Nx*Ny)
+                    q_reshaped = arr.reshape(Ns, Nx * Ny)
                     print(f"Data interpreted as (Ns, Nx, Ny) = {arr.shape} via permutation {axes}")
                     break
             except Exception:
                 continue
         else:
             # Try if already 2D (Ns, Nspace)
-            if q.ndim == 2 and q.shape[1] == Nx*Ny:
+            if q.ndim == 2 and q.shape[1] == Nx * Ny:
                 q_reshaped = q
                 Ns = q.shape[0]
                 print(f"Data interpreted as (Ns, Nspace) = {q.shape}")
             else:
                 raise ValueError(f"Cannot interpret data shape: q={q.shape}, x={x.shape}, y={y.shape}. Please check the file.")
-    return {
-        'q': q_reshaped,
-        'x': x_vec,
-        'y': y_vec,
-        'dt': dt,
-        'Nx': Nx,
-        'Ny': Ny,
-        'Ns': q_reshaped.shape[0]
-    }
+    return {"q": q_reshaped, "x": x_vec, "y": y_vec, "dt": dt, "Nx": Nx, "Ny": Ny, "Ns": q_reshaped.shape[0]}
 
 
 def load_data(file_path):
     """Smart data loader that selects appropriate loader based on file name."""
-    if 'jet' in file_path.lower():
+    if "jet" in file_path.lower():
         return load_jetles_data(file_path)
     else:
         return load_mat_data(file_path)
@@ -130,48 +124,48 @@ def load_data(file_path):
 def calculate_polar_weights(x, y):
     """Calculate integration weights for a 2D cylindrical grid (x, r)."""
     Nx, Ny = x.shape[0], y.shape[0]
-    
+
     # Calculate y-direction (r-direction) integration weights (Wy)
     Wy = np.zeros((Ny, 1))
-    
+
     # First point (centerline)
     if Ny > 1:
         y_mid_right = (y[0] + y[1]) / 2
         Wy[0] = np.pi * y_mid_right**2
     else:
-        Wy[0] = np.pi * y[0]**2
-    
+        Wy[0] = np.pi * y[0] ** 2
+
     # Middle points
     for i in range(1, Ny - 1):
-        y_mid_left = (y[i-1] + y[i]) / 2
-        y_mid_right = (y[i] + y[i+1]) / 2
+        y_mid_left = (y[i - 1] + y[i]) / 2
+        y_mid_right = (y[i] + y[i + 1]) / 2
         Wy[i] = np.pi * (y_mid_right**2 - y_mid_left**2)
-    
+
     # Last point
     if Ny > 1:
         y_mid_left = (y[-2] + y[-1]) / 2
-        Wy[Ny - 1] = np.pi * (y[-1]**2 - y_mid_left**2)
+        Wy[Ny - 1] = np.pi * (y[-1] ** 2 - y_mid_left**2)
 
     # Calculate x-direction integration weights (Wx)
     Wx = np.zeros((Nx, 1))
-    
+
     # First point
     if Nx > 1:
         Wx[0] = (x[1] - x[0]) / 2
     else:
         Wx[0] = 1.0
-    
+
     # Middle points
     for i in range(1, Nx - 1):
-        Wx[i] = (x[i+1] - x[i-1]) / 2
-    
+        Wx[i] = (x[i + 1] - x[i - 1]) / 2
+
     # Last point
     if Nx > 1:
         Wx[Nx - 1] = (x[Nx - 1] - x[Nx - 2]) / 2
-    
+
     # Combine weights
     W = np.reshape(Wx @ np.transpose(Wy), (Nx * Ny, 1))
-    
+
     return W
 
 
@@ -186,7 +180,7 @@ def sine_window(n):
     return np.sin(np.pi * (np.arange(n) + 0.5) / n)
 
 
-def blocksfft(q, nfft, nblocks, novlap, blockwise_mean=False, normvar=False, window_norm='power', window_type='hamming'):
+def blocksfft(q, nfft, nblocks, novlap, blockwise_mean=False, normvar=False, window_norm="power", window_type="hamming"):
     """
     Compute blocked FFT using Welch's method for CSD estimation.
 
@@ -211,43 +205,47 @@ def blocksfft(q, nfft, nblocks, novlap, blockwise_mean=False, normvar=False, win
     ---
     """
     # Select window function
-    if window_type == 'sine':
+    if window_type == "sine":
         window = sine_window(nfft)
     else:
         window = np.hamming(nfft)
 
     # Normalize window
-    if window_norm == 'amplitude':
+    if window_norm == "amplitude":
         cw = 1.0 / window.mean()
     else:  # 'power' normalization (default)
         cw = 1.0 / np.sqrt(np.mean(window**2))
 
-    nmesh = q.shape[1] # Number of spatial points (Nx * Ny)
-    q_hat = np.zeros((nfft, nmesh, nblocks), dtype=complex)
-    q_mean = np.mean(q, axis=0) # Temporal mean (long-time mean)
-    window_broadcast = window[:, np.newaxis] # Reshape window for broadcasting
+    nmesh = q.shape[1]  # Number of spatial points (Nx * Ny)
+    n_freq_out = nfft // 2 + 1  # Number of frequency bins for one-sided spectrum
+    q_hat = np.zeros((n_freq_out, nmesh, nblocks), dtype=complex)
+    q_mean = np.mean(q, axis=0)  # Temporal mean (long-time mean)
+    window_broadcast = window[:, np.newaxis]  # Reshape window for broadcasting
 
     # Process each block
     for iblk in range(nblocks):
-        ts = min(iblk * (nfft - novlap), q.shape[0] - nfft) # Start index
-        tf = np.arange(ts, ts + nfft) # Time indices for the block
+        ts = min(iblk * (nfft - novlap), q.shape[0] - nfft)  # Start index
+        tf = np.arange(ts, ts + nfft)  # Time indices for the block
         block = q[tf, :]
-        
+
         # Subtract mean
         if blockwise_mean:
             block_mean = np.mean(block, axis=0)
         else:
             block_mean = q_mean
         block_centered = block - block_mean
-        
+
         # Normalize variance if requested
         if normvar:
             block_var = np.var(block_centered, axis=0, ddof=1)
-            block_var[block_var < 4 * np.finfo(float).eps] = 1.0 # Avoid division by zero
+            block_var[block_var < 4 * np.finfo(float).eps] = 1.0  # Avoid division by zero
             block_centered = block_centered / block_var
-        
+
         # Apply window and FFT
         fft_func = get_fft_func()
+        # Compute full FFT
+        full_fft_result = fft_func(block_centered * window_broadcast, axis=0)
+
         # --- Normalization explanation ---
         # The FFT result is normalized by:
         #   - cw: window normalization constant (either amplitude or power, see above)
@@ -257,17 +255,18 @@ def blocksfft(q, nfft, nblocks, novlap, blockwise_mean=False, normvar=False, win
         #   - For 'amplitude' normalization, the amplitude spectrum matches the input amplitude scaling
         # Note: No further normalization by the total signal length is needed here, because Welch's method treats each block independently.
         # When combining blocks (e.g., averaging periodograms), normalization by the number of blocks is handled outside this function.
-        q_hat[:, :, iblk] = cw / nfft * fft_func(block_centered * window_broadcast, axis=0)
-    
+        # Store only the one-sided spectrum (first n_freq_out points)
+        q_hat[:, :, iblk] = (cw / nfft) * full_fft_result[:n_freq_out, :]
+
     return q_hat
 
 
 def auto_detect_weight_type(file_path):
     """Auto-detect weight type based on file name."""
-    if 'cavity' in file_path.lower():
-        return 'uniform'
+    if "cavity" in file_path.lower():
+        return "uniform"
     else:
-        return 'polar'
+        return "polar"
 
 
 def spod_function(qhat, nblocks, dst, w, return_psi=False):
@@ -309,19 +308,10 @@ def spod_function(qhat, nblocks, dst, w, return_psi=False):
 
 class BaseAnalyzer:
     """Base class for modal decomposition analyzers."""
-    
-    def __init__(
-        self,
-        file_path,
-        nfft=128,
-        overlap=0.5,
-        results_dir="./preprocess",
-        figures_dir="./figs",
-        data_loader=None,
-        spatial_weight_type='auto'
-    ):
+
+    def __init__(self, file_path, nfft=128, overlap=0.5, results_dir="./preprocess", figures_dir="./figs", data_loader=None, spatial_weight_type="auto"):
         """Initialize the analyzer.
-        
+
         Args:
             file_path (str): Path to data file.
             nfft (int): Number of snapshots per FFT block.
@@ -336,16 +326,16 @@ class BaseAnalyzer:
         self.overlap = overlap
         self.results_dir = results_dir
         self.figures_dir = figures_dir
-        
+
         # Set default data loader based on file type
         self.data_loader = data_loader or load_data
-        
+
         # Set default weight type
-        if spatial_weight_type == 'auto':
+        if spatial_weight_type == "auto":
             self.spatial_weight_type = auto_detect_weight_type(file_path)
         else:
             self.spatial_weight_type = spatial_weight_type
-        
+
         # Calculated later
         self.novlap = int(overlap * nfft)
         self.data = {}
@@ -353,50 +343,44 @@ class BaseAnalyzer:
         self.nblocks = 0
         self.fs = 0.0
         self.qhat = np.array([])
-        
+
         # Extract root name for output files
         base = os.path.basename(file_path)
         self.data_root = os.path.splitext(base)[0]
-        
+
         # Ensure output directories exist
         os.makedirs(self.results_dir, exist_ok=True)
         os.makedirs(self.figures_dir, exist_ok=True)
-    
+
     def load_and_preprocess(self):
         """Load data and calculate weights."""
         # Load data from file
         self.data = self.data_loader(self.file_path)
-        
+
         # Calculate spatial weights
-        if self.spatial_weight_type == 'polar':
-            self.W = calculate_polar_weights(self.data['x'], self.data['y'])
+        if self.spatial_weight_type == "polar":
+            self.W = calculate_polar_weights(self.data["x"], self.data["y"])
             print("Using polar (cylindrical) spatial weights.")
         else:
-            self.W = calculate_uniform_weights(self.data['x'], self.data['y'])
+            self.W = calculate_uniform_weights(self.data["x"], self.data["y"])
             print("Using uniform spatial weights (rectangular grid).")
-        
+
         # Calculate derived parameters
-        self.nblocks = int(np.ceil((self.data['Ns'] - self.novlap) / (self.nfft - self.novlap)))
-        self.fs = 1 / self.data['dt']
-        
+        self.nblocks = int(np.ceil((self.data["Ns"] - self.novlap) / (self.nfft - self.novlap)))
+        self.fs = 1 / self.data["dt"]
+
         print(f"Data loaded: {self.data['Ns']} snapshots, {self.data['Nx']}×{self.data['Ny']} spatial points")
-        print(f"FFT parameters: {self.nfft} points, {self.overlap*100}% overlap, {self.nblocks} blocks")
-    
+        print(f"FFT parameters: {self.nfft} points, {self.overlap * 100}% overlap, {self.nblocks} blocks")
+
     def compute_fft_blocks(self):
         """Compute blocked FFT using Welch's method."""
-        if 'q' not in self.data:
+        if "q" not in self.data:
             raise ValueError("Data not loaded. Call load_and_preprocess() first.")
-        
+
         print(f"Computing FFT with {self.nblocks} blocks...")
-        self.qhat = blocksfft(
-            self.data['q'], self.nfft, self.nblocks, self.novlap,
-            blockwise_mean=getattr(self, 'blockwise_mean', False),
-            normvar=getattr(self, 'normvar', False),
-            window_norm=getattr(self, 'window_norm', 'power'),
-            window_type=getattr(self, 'window_type', 'hamming')
-        )
+        self.qhat = blocksfft(self.data["q"], self.nfft, self.nblocks, self.novlap, blockwise_mean=getattr(self, "blockwise_mean", False), normvar=getattr(self, "normvar", False), window_norm=getattr(self, "window_norm", "power"), window_type=getattr(self, "window_type", "hamming"))
         print("FFT computation complete.")
-    
+
     def save_results(self, filename=None, analysis_type="spod"):
         """Save results to HDF5 file with harmonized filename and format.
         Args:
@@ -404,9 +388,7 @@ class BaseAnalyzer:
             analysis_type (str): Analysis type for filename (e.g., 'spod', 'bsmd').
         """
         if not filename:
-            filename = make_result_filename(
-                self.data_root, self.nfft, self.overlap, self.data.get('Ns', 0), analysis_type
-            )
+            filename = make_result_filename(self.data_root, self.nfft, self.overlap, self.data.get("Ns", 0), analysis_type)
         save_path = os.path.join(self.results_dir, filename)
         print(f"Saving results to {save_path}")
         # This is a placeholder - subclasses should implement specific saving logic
@@ -416,23 +398,23 @@ class BaseAnalyzer:
             f.attrs["nblocks"] = self.nblocks
             f.attrs["fs"] = self.fs
             # Save coordinates
-            f.create_dataset("x", data=self.data['x'], compression="gzip")
-            f.create_dataset("y", data=self.data['y'], compression="gzip")
+            f.create_dataset("x", data=self.data["x"], compression="gzip")
+            f.create_dataset("y", data=self.data["y"], compression="gzip")
             # Save weights
             f.create_dataset("W", data=self.W, compression="gzip")
-    
+
     def run(self, compute_fft=True):
         """Run the full analysis pipeline."""
         start_time = time.time()
-        
+
         # Load data and calculate weights
         self.load_and_preprocess()
-        
+
         # Compute FFT blocks if requested
         if compute_fft:
             self.compute_fft_blocks()
-        
+
         end_time = time.time()
         print(f"Completed in {end_time - start_time:.2f} seconds.")
-        
+
         return self

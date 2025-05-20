@@ -9,6 +9,8 @@ import json
 import matplotlib.pyplot as plt
 from scipy import signal
 
+DPI=500
+
 # Function to generate 1D signals with realistic noise
 def generate_signal(size):
     np.random.seed(42)  # Fixed seed for reproducibility
@@ -106,7 +108,22 @@ def compare_fft(size, N_times=3, discard=1):
     return result_dict
 
 # Test with different sizes for 1D signals, including non-powers of 2
-sizes = [1000, 2049, 3333, 4097, 8199, 10001, 16385, 32798, 65533]
+# Generate powers of two and nearby off values, up to 128k (131072)
+powers = list(range(10, 17))  # 2^10 (1024) to 2^17 (131072)
+sizes_pow2 = [2 ** p for p in powers]
+sizes_off = []
+for n in sizes_pow2:
+    # Add both +1 and -1, +3 and -3 neighbors, but only if positive, not a power of two, and <= 131072
+    for delta in [-3, -1, +1, +3]:
+        off_val = n + delta
+        if 0 < off_val <= 131072 and (off_val & (off_val - 1)) != 0:
+            sizes_off.append(off_val)
+
+# Combine, deduplicate, and sort
+sizes = sorted(set(sizes_pow2 + sizes_off))
+
+print("Testing", len(sizes), "sizes:", sizes)
+
 backend_names = get_fft_backend_names()
 N_times = 3  # Default number of repetitions for timing
 
@@ -127,14 +144,14 @@ for size in sizes:
     print(f"Completed size: {size}")
 
 # Save the results to a JSON file
-with open('fft_results.json', 'w') as f:
+with open('fft_benchmark.json', 'w') as f:
     results_copy = {k: [float(x) if isinstance(x, (int, float)) else x for x in v] for k, v in results.items()}
     results_copy['sizes'] = [float(x) for x in sizes]  # Convert sizes to float
     json.dump(results_copy, f, indent=4)
-    print("Results saved to fft_results.json")
+    print("Results saved to fft_benchmark.json")
 
 # Function to plot the results from the JSON file
-def plot_fft_results(json_file='fft_results.json'):
+def plot_fft_results(json_file='fft_benchmark.json'):
     # Load the results from the JSON file
     with open(json_file, 'r') as f:
         data = json.load(f)
@@ -177,7 +194,7 @@ def plot_fft_results(json_file='fft_results.json'):
     plt.title('FFT Performance Comparison Across Libraries (1D Signals)')
     plt.grid(True, which="both", ls="-", alpha=0.2)
     plt.legend()
-    plt.savefig('fft_performance_comparison.png', dpi=300, bbox_inches='tight')
+    plt.savefig('fft_benchmark_performance.png', dpi=DPI, bbox_inches='tight')
 
     # Print which backend is overall fastest (lowest average timing)
     avg_timings = {}
@@ -213,7 +230,7 @@ def plot_fft_results(json_file='fft_results.json'):
     plt.title('FFT Accuracy Comparison Across Libraries (1D Signals)')
     plt.grid(True, which="both", ls="-", alpha=0.2)
     plt.legend()
-    plt.savefig('fft_accuracy_comparison.png', dpi=300, bbox_inches='tight')
+    plt.savefig('fft_benchmark_accuracy.png', dpi=DPI, bbox_inches='tight')
     # Sample signal and FFT
     plt.figure(figsize=(12, 8))
     sample_size = 1000
@@ -249,8 +266,8 @@ def plot_fft_results(json_file='fft_results.json'):
     plt.ylabel('Magnitude')
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig('sample_signal_and_fft.png', dpi=300, bbox_inches='tight')
-    print("Plots saved as fft_performance_comparison.png, fft_accuracy_comparison.png, and sample_signal_and_fft.png")
+    plt.savefig('fft_benchmark_signal.png', dpi=DPI, bbox_inches='tight')
+    print("Plots saved as fft_benchmark_performance.png, fft_benchmark_accuracy.png, and fft_benchmark_signal.png")
 
     # Plot errors
     plt.figure(figsize=(12, 8))
@@ -267,7 +284,7 @@ def plot_fft_results(json_file='fft_results.json'):
     plt.title('FFT Accuracy Comparison Across Libraries (1D Signals)')
     plt.grid(True, which="both", ls="-", alpha=0.2)
     plt.legend()
-    plt.savefig('fft_accuracy_comparison.png', dpi=300, bbox_inches='tight')
+    plt.savefig('fft_benchmark_accuracy.png', dpi=DPI, bbox_inches='tight')
     # Sample signal and FFT
     plt.figure(figsize=(12, 8))
     sample_size = 1000
@@ -303,8 +320,8 @@ def plot_fft_results(json_file='fft_results.json'):
     plt.ylabel('Magnitude')
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig('sample_signal_and_fft.png', dpi=300, bbox_inches='tight')
-    print("Plots saved as fft_performance_comparison.png, fft_accuracy_comparison.png, and sample_signal_and_fft.png")
+    plt.savefig('fft_benchmark_signal.png', dpi=DPI, bbox_inches='tight')
+    print("Plots saved as fft_benchmark_performance.png, fft_benchmark_accuracy.png, and fft_benchmark_signal.png")
 
 # Call the plot function if this script is run directly
 if __name__ == "__main__":
