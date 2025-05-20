@@ -8,6 +8,20 @@ All imports are centralized here to keep the code clean and consistent.
 from configs import *
 from fft_backends import get_fft_func
 
+def make_result_filename(root, nfft, overlap, Ns, analysis):
+    """
+    Generate a harmonized result filename for analysis outputs.
+    Args:
+        root (str): Base name of the dataset (no extension)
+        nfft (int): FFT block size
+        overlap (float): Overlap fraction (0-1)
+        Ns (int): Number of snapshots
+        analysis (str): Analysis type (e.g., 'spod', 'bsmd')
+    Returns:
+        str: Result filename (always .hdf5)
+    """
+    return f"{root}_Nfft{nfft}_ovlap{overlap}_{Ns}snapshots_{analysis}.hdf5"
+
 def load_jetles_data(file_path):
     """Load and preprocess data from HDF5 file with JetLES format."""
     print(f"Loading data from {file_path}")
@@ -173,13 +187,36 @@ def sine_window(n):
 
 
 def blocksfft(q, nfft, nblocks, novlap, blockwise_mean=False, normvar=False, window_norm='power', window_type='hamming'):
-    """Compute blocked FFT using Welch's method for CSD estimation."""
+    """
+    Compute blocked FFT using Welch's method for CSD estimation.
+
+    Parameters:
+    q (np.ndarray): Input data [time, space]
+    nfft (int): Number of FFT points
+    nblocks (int): Number of blocks
+    novlap (int): Number of overlapping points between blocks
+    blockwise_mean (bool): Subtract blockwise mean if True
+    normvar (bool): Normalize variance if True
+    window_norm (str): Window normalization type ('amplitude' or 'power')
+    window_type (str): Window type ('hamming' or 'sine')
+
+    Returns:
+    q_hat (np.ndarray): FFT coefficients [freq, space, block]
+
+    ---
+    IMPORTANT:
+    - This function assumes the FFT backend (numpy, scipy, pyfftw, etc.) does NOT normalize the FFT by default (which is true for standard backends).
+    - If you use a backend or option that applies normalization (e.g., norm='ortho'), REMOVE the division by nfft below to avoid double normalization.
+    - For correct SPOD scaling, ensure that dst (frequency resolution) is set as fs / nfft, where fs is the sampling frequency.
+    ---
+    """
     # Select window function
     if window_type == 'sine':
         window = sine_window(nfft)
     else:
         window = np.hamming(nfft)
 
+    # Normalize window
     if window_norm == 'amplitude':
         cw = 1.0 / window.mean()
     else:  # 'power' normalization (default)
@@ -190,24 +227,38 @@ def blocksfft(q, nfft, nblocks, novlap, blockwise_mean=False, normvar=False, win
     q_mean = np.mean(q, axis=0) # Temporal mean (long-time mean)
     window_broadcast = window[:, np.newaxis] # Reshape window for broadcasting
 
+    # Process each block
     for iblk in range(nblocks):
         ts = min(iblk * (nfft - novlap), q.shape[0] - nfft) # Start index
         tf = np.arange(ts, ts + nfft) # Time indices for the block
         block = q[tf, :]
+        
         # Subtract mean
         if blockwise_mean:
             block_mean = np.mean(block, axis=0)
         else:
             block_mean = q_mean
         block_centered = block - block_mean
-        # Variance normalization if requested
+        
+        # Normalize variance if requested
         if normvar:
             block_var = np.var(block_centered, axis=0, ddof=1)
             block_var[block_var < 4 * np.finfo(float).eps] = 1.0 # Avoid division by zero
             block_centered = block_centered / block_var
+        
         # Apply window and FFT
         fft_func = get_fft_func()
+        # --- Normalization explanation ---
+        # The FFT result is normalized by:
+        #   - cw: window normalization constant (either amplitude or power, see above)
+        #   - nfft: block length, to match standard FFT conventions (NumPy/SciPy FFTs are unnormalized by default)
+        # This ensures that:
+        #   - For 'power' normalization, the output power spectrum is consistent with Parseval's theorem (total energy preserved)
+        #   - For 'amplitude' normalization, the amplitude spectrum matches the input amplitude scaling
+        # Note: No further normalization by the total signal length is needed here, because Welch's method treats each block independently.
+        # When combining blocks (e.g., averaging periodograms), normalization by the number of blocks is handled outside this function.
         q_hat[:, :, iblk] = cw / nfft * fft_func(block_centered * window_broadcast, axis=0)
+    
     return q_hat
 
 
@@ -346,25 +397,27 @@ class BaseAnalyzer:
         )
         print("FFT computation complete.")
     
-    def save_results(self, filename=None):
-        """Save results to HDF5 file."""
+    def save_results(self, filename=None, analysis_type="spod"):
+        """Save results to HDF5 file with harmonized filename and format.
+        Args:
+            filename (str, optional): Custom filename. If not provided, uses harmonized scheme.
+            analysis_type (str): Analysis type for filename (e.g., 'spod', 'bsmd').
+        """
         if not filename:
-            filename = f"{self.data_root}_results.hdf5"
-        
+            filename = make_result_filename(
+                self.data_root, self.nfft, self.overlap, self.data.get('Ns', 0), analysis_type
+            )
         save_path = os.path.join(self.results_dir, filename)
         print(f"Saving results to {save_path}")
-        
         # This is a placeholder - subclasses should implement specific saving logic
         with h5py.File(save_path, "w") as f:
             f.attrs["nfft"] = self.nfft
             f.attrs["overlap"] = self.overlap
             f.attrs["nblocks"] = self.nblocks
             f.attrs["fs"] = self.fs
-            
             # Save coordinates
             f.create_dataset("x", data=self.data['x'], compression="gzip")
             f.create_dataset("y", data=self.data['y'], compression="gzip")
-            
             # Save weights
             f.create_dataset("W", data=self.W, compression="gzip")
     

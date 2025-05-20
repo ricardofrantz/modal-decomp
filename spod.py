@@ -2,6 +2,9 @@
 """
 Extract modes with Spectral Proper Orthogonal Decomposition (SPOD)
 
+For now we only use standard version and NOT streaming version, as available in 
+https://github.com/MathEXLab/PySPOD/tree/main/pyspod/spod
+
 Author: R. Frantz
 
 Reference codes:
@@ -156,8 +159,8 @@ class SPODAnalyzer(BaseAnalyzer):
     def save_results(self):
         if self.phi.size == 0 or self.lambda_values.size == 0:
             raise ValueError("SPOD not performed. Call perform_spod() first.")
-        save_name = f"{self.data_root}_Nfft{self.nfft}_ovlap{self.overlap}_{self.data['Ns']}snapshots.hdf5"
-        save_path = os.path.join(self.results_dir, save_name)
+        from utils import make_result_filename
+        save_path = os.path.join(self.results_dir, make_result_filename(self.data_root, self.nfft, self.overlap, self.data['Ns'], 'spod'))
         print(f"Saving results to {save_path}")
         with h5py.File(save_path, "w") as fsnap:
             fsnap.create_dataset("Phi", data=self.phi, compression="gzip")

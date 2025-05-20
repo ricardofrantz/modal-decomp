@@ -180,12 +180,14 @@ class BSMDAnalyzer(BaseAnalyzer):
 
     def save_results(self, fname=None):
         """Save triads, eigenvalues, modes, and weights to HDF5."""
+        from utils import make_result_filename
         if fname is None:
-            fname = f"{self.data_root}_BSMD.h5"
+            results_path = os.path.join(self.results_dir, make_result_filename(self.data_root, self.nfft, self.overlap, self.data['Ns'], 'bsmd'))
+        else:
+            results_path = os.path.join(self.results_dir, fname)
         # Ensure output directory exists
         os.makedirs(self.results_dir, exist_ok=True)
-        fp = os.path.join(self.results_dir, fname)
-        with h5py.File(fp, 'w') as f:
+        with h5py.File(results_path, "w") as f:
             f.create_dataset('triads', data=np.array(self.triads))
             f.create_dataset('lambda_real', data=self.lambda_vals.real)
             f.create_dataset('lambda_imag', data=self.lambda_vals.imag)
@@ -196,7 +198,7 @@ class BSMDAnalyzer(BaseAnalyzer):
             f.create_dataset('x', data=self.data['x'])
             f.create_dataset('y', data=self.data['y'])
             f.create_dataset('W', data=self.W)
-        print(f"Results saved to {fp}")
+        print(f"Results saved to {results_path}")
 
     def run_analysis(self):
         """Execute the full BSMD pipeline."""
