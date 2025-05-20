@@ -2,17 +2,17 @@
 
 A **pure-Python** collection of simple scripts (no MPI, minimal dependencies) for extracting coherent flow structures via modal decompositions:
 
-- **Bispectral Mode Decomposition (BSMD)**  
-  Extracts third-order phase-coupled spatial modes by diagonalizing an estimated bispectral density tensor, revealing the triadic interactions that drive nonlinear energy transfer.  
-  _Reference:_ Yeung & Schmidt (2023), “Plasma actuation and bispectral mode decomposition of supersonic twin-rectangular jet flow,” AIAA Paper 2023-4177
-
 - **Spectral Proper Orthogonal Decomposition (SPOD)**  
   Solves the cross-spectral density eigenvalue problem to yield energy-ranked, harmonic spatial modes under the assumption of wide-sense stationarity.  
-  _Reference:_ Towne, Schmidt & Colonius (2018), “Spectral proper orthogonal decomposition and its relationship to dynamic mode decomposition and resolvent analysis,” J. Fluid Mech. 847, 821–867
+  _Reference:_ [Towne, Schmidt & Colonius (2018)](https://arxiv.org/abs/1708.04393)
+
+- **Bispectral Mode Decomposition (BSMD)**  
+  Extracts third-order phase-coupled spatial modes by diagonalizing an estimated bispectral density tensor, revealing the triadic interactions that drive nonlinear energy transfer.
+  _Reference:_ [Nekkanti, Pickering, Schmidt & Colonius (2025)](https://arxiv.org/abs/2502.15091)
 
 - **Space-Time Proper Orthogonal Decomposition (ST-POD)**  
   Generalizes POD to a full space–time framework by solving the 4-D Fredholm eigenproblem of the space-time correlation tensor, capturing arbitrary nonstationary and transient dynamics over finite windows.  
-  _Reference:_ Yeung & Schmidt (2025), “Space-time proper orthogonal decomposition of actuation transients: plasma-controlled jet flow,” arXiv:2502.09746v1
+  _Reference:_ [Yeung & Schmidt (2025)](https://arxiv.org/abs/2502.09746)
 
 ---
 
