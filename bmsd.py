@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 """
-BiSpectral Mode Decomposition (BSMD)
+Extract coherent bispectral modes with BiSpectral Mode Decomposition (BSMD)
 
-Extract coherent bispectral modes following Schmidt (2020).
-
-Reference:
-  Schmidt, O. T. (2020).
-  Bispectral mode decomposition of nonlinear flows.
+Reference: "Bispectral mode decomposition of nonlinear flows."  Schmidt, O. T. (2020).
 
 Definitions:
   bispectrum B(f1,f2) = ⟨ X(f1) X(f2) X*(f1+f2) ⟩,
@@ -23,23 +19,7 @@ Method:
   5. Spatial modes:
        Φ1_j = Σ_b a_b^* B_jb,  Φ2_j = Σ_b a_b^* A_jb.
 """
-import os
-os.environ['OS_ACTIVITY_MODE'] = 'disable'  # suppress macOS IMKClient logs
-import time
-import re
-import h5py
-import numpy as np
-from scipy.linalg import eig
-import matplotlib.pyplot as plt
-
-# Reuse utilities from the SPOD implementation
-from spod import (
-    load_mat_data,
-    load_jetles_data,
-    calculate_polar_weights,
-    calculate_uniform_weights,
-    blocksfft
-)
+from utils import *
 
 # Standard static triad list
 ALL_TRIADS = [
