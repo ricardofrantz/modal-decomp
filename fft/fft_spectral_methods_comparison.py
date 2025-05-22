@@ -8,26 +8,94 @@ from complex_signal import generate_complex_signal
 t0 = time.perf_counter()
 
 def periodogram_rfft(x, fs):
-    """Compute power spectral density using periodogram method with RFFT. Frequencies are normalized (f = St)."""
-    N = len(x)
-    X = rfft(x)
-    freqs = rfftfreq(N, 1/fs)
-    psd = np.abs(X)**2 / (N * fs)
+    """
+    Compute the power spectral density (PSD) of a real-valued signal using the periodogram method and the real FFT (RFFT).
+
+    This function computes:
+        psd = |RFFT(x)|^2 / (N * fs)
+    where N = len(x), fs is the sampling frequency, and RFFT(x) is the one-sided FFT of x.
+
+    - The output `freqs` are the non-negative frequency bins (Hz), compatible with the RFFT.
+    - The output `psd` is in units of signal_power_per_Hz (e.g., V^2/Hz for voltage signals).
+    - This is the standard periodogram definition for signals sampled at `fs` Hz, and matches the output of scipy.signal.periodogram with scaling='density'.
+    - The RFFT is used for efficiency: for real-valued input, only the non-negative frequency bins are needed and computed.
+
+    NOTE ON NORMALIZATION:
+    The normalization here (psd = |X|^2 / (N * fs)) is correct for standard unnormalized FFT conventions (as used by numpy, scipy, etc).
+    Do NOT apply any additional normalization to X or the PSD result. Double normalization (e.g., dividing by N or fs again)
+    will lead to incorrect spectral amplitudes and energies. This is a common source of error when porting code or switching FFT libraries.
+    """
+    # N = len(x)
+    # X = rfft(x)
+    # freqs = rfftfreq(N, 1/fs)
+    # psd = np.abs(X)**2 / (N * fs)
+
+    freqs, psd = signal.periodogram(x, fs, scaling='density')
+
+    # This manual computation is equivalent to:
+    #     scipy.signal.periodogram(x, fs, scaling='density')
+    #
+    # 'scaling="density"' gives the Power Spectral Density (PSD) in physical units (e.g., V^2/Hz),
+    # matching the normalization used here (|X|^2 / (N * fs)).
+    #
+    # If you use 'scaling="spectrum"', the periodogram instead returns the power per frequency bin (|X|^2 / N^2),
+    # which is NOT normalized by the frequency resolution (Hz). This is sometimes called the "power spectrum" rather than PSD.
+    #
+    # When to use each:
+    #   - Use 'density' (the default here and in most scientific work) when you want power per Hz (PSD),
+    #     which is appropriate for comparing signals of different lengths or sampling rates, or for physical interpretation.
+    #   - Use 'spectrum' if you want the raw squared amplitude per FFT bin, e.g., for mathematical analysis or when integrating over bins.
+    #
+
     return freqs, psd
 
 def blackman_tukey_rfft(x, fs):
-    """Compute power spectral density using Blackman-Tukey method with RFFT. Frequencies are normalized (f = St)."""
+    """
+    Compute power spectral density (PSD) using the Blackman-Tukey method with the real FFT (RFFT).
+    Frequencies are normalized (f = St).
+
+    - The autocorrelation of the signal is computed and windowed (here, no explicit window is applied).
+    - The PSD is obtained by taking the RFFT of the autocorrelation and normalizing by the sampling frequency fs.
+    - Output `freqs` are the non-negative frequency bins (Hz), compatible with the RFFT.
+    - Output `psd` is in units of signal_power_per_Hz (e.g., V^2/Hz for voltage signals), matching the standard Blackman-Tukey convention.
+
+    NOTE ON NORMALIZATION:
+    The normalization here (psd = |RFFT(autocorr)| / fs) is standard for the Blackman-Tukey method with unnormalized FFTs.
+    Do NOT apply any additional normalization to the FFT output or PSD. Double normalization will give incorrect results.
+    This is a common source of error when porting code or switching FFT libraries.
+
+    EQUIVALENT IN SCIPY:
+    There is no direct one-liner equivalent for the Blackman-Tukey method in scipy.signal.
+    Related functions are:
+      - scipy.signal.csd: Computes the cross-spectral density (including autocorrelation for PSD), but uses Welch's method by default.
+      - scipy.signal.welch: Computes PSD using Welch's (averaged periodogram) method, not Blackman-Tukey.
+    To replicate Blackman-Tukey exactly, you must compute the autocorrelation and then its FFT, as done here.
+    """
     N = len(x)
     autocorr = signal.correlate(x, x, mode='full') / N
     autocorr = autocorr[N-1:]
     X = rfft(autocorr)
     freqs = rfftfreq(N, 1/fs)
     psd = np.abs(X) / fs
+
     return freqs, psd
 
 def welch_method(x, fs):
-    """Compute power spectral density using Welch's method. Frequencies are normalized (f = St)."""
-    freqs, psd = signal.welch(x, fs, nperseg=len(x)//8, scaling='density')
+    """
+    Compute power spectral density (PSD) using Welch's method (averaged periodogram), via scipy.signal.welch.
+    Frequencies are normalized (f = St).
+
+    - Welch's method splits the signal into overlapping segments, computes a periodogram for each, and averages them.
+    - This reduces the variance of the PSD estimate at the cost of frequency resolution.
+    - Output `freqs` are the non-negative frequency bins (Hz).
+    - Output `psd` is in units of signal_power_per_Hz (e.g., V^2/Hz for voltage signals), matching the standard PSD convention.
+    - The parameter scaling='density' gives the PSD (power per Hz), which is the default and standard for physical interpretation.
+    - If you use scaling='spectrum', the output is the power per FFT bin (not per Hz).
+    - Always check the scaling and normalization to ensure correct interpretation and comparison across libraries and publications.
+
+    This function is a direct wrapper for scipy.signal.welch with scaling='density'.
+    """
+    freqs, psd = signal.welch(x, fs, nperseg=len(x), scaling='density')
     return freqs, psd
 
 
@@ -163,7 +231,7 @@ for i in range(1, 4):
 
 # Adjust layout and save figure
 plt.tight_layout()
-plt.savefig('fft_peaks_spectral_analysis.png', dpi=400, bbox_inches='tight')
+plt.savefig('fft_spectral_methods_comparison_spectral_analysis.png', dpi=400, bbox_inches='tight')
 
 # Process results
 method_performance = {}
@@ -203,7 +271,7 @@ for method, data in method_performance.items():
                  xytext=(5, 5), textcoords='offset points')
 
 plt.tight_layout()
-plt.savefig('fft_peaks_performance_vs_time.png', dpi=400, bbox_inches='tight')
+plt.savefig('fft_spectral_methods_comparison_performance_vs_time.png', dpi=400, bbox_inches='tight')
 
 # Print performance table
 print("\nPerformance Table:")
@@ -274,7 +342,7 @@ plt.title("Error vs Noise Level for Different Numbers of Periods")
 plt.legend(title="Periods of T2")
 plt.yscale('log')
 plt.grid(True)
-plt.savefig('fft_peaks_error_vs_noise.png', dpi=400, bbox_inches='tight')
+plt.savefig('fft_spectral_methods_comparison_error_vs_noise.png', dpi=400, bbox_inches='tight')
 
 print("Results:")
 for noise_level, data in results_by_noise.items():
