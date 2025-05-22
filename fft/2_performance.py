@@ -144,14 +144,14 @@ for size in sizes:
     print(f"Completed size: {size}")
 
 # Save the results to a JSON file
-with open('fft_benchmark.json', 'w') as f:
+with open('2_performance.json', 'w') as f:
     results_copy = {k: [float(x) if isinstance(x, (int, float)) else x for x in v] for k, v in results.items()}
     results_copy['sizes'] = [float(x) for x in sizes]  # Convert sizes to float
     json.dump(results_copy, f, indent=4)
-    print("Results saved to fft_benchmark.json")
+    print("Results saved to 2_performance.json")
 
 # Function to plot the results from the JSON file
-def plot_fft_results(json_file='fft_benchmark.json'):
+def plot_fft_results(json_file='2_performance.json'):
     # Load the results from the JSON file
     with open(json_file, 'r') as f:
         data = json.load(f)
@@ -194,7 +194,7 @@ def plot_fft_results(json_file='fft_benchmark.json'):
     plt.title('FFT Performance Comparison Across Libraries (1D Signals)')
     plt.grid(True, which="both", ls="-", alpha=0.2)
     plt.legend()
-    plt.savefig('fft_benchmark_performance.png', dpi=DPI, bbox_inches='tight')
+    plt.savefig('2_performance_performance.png', dpi=DPI, bbox_inches='tight')
 
     # Print which backend is overall fastest (lowest average timing)
     avg_timings = {}
@@ -230,7 +230,7 @@ def plot_fft_results(json_file='fft_benchmark.json'):
     plt.title('FFT Accuracy Comparison Across Libraries (1D Signals)')
     plt.grid(True, which="both", ls="-", alpha=0.2)
     plt.legend()
-    plt.savefig('fft_benchmark_accuracy.png', dpi=DPI, bbox_inches='tight')
+    plt.savefig('2_performance_accuracy.png', dpi=DPI, bbox_inches='tight')
     # Sample signal and FFT
     plt.figure(figsize=(12, 8))
     sample_size = 1000
@@ -266,8 +266,8 @@ def plot_fft_results(json_file='fft_benchmark.json'):
     plt.ylabel('Magnitude')
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig('fft_benchmark_signal.png', dpi=DPI, bbox_inches='tight')
-    print("Plots saved as fft_benchmark_performance.png, fft_benchmark_accuracy.png, and fft_benchmark_signal.png")
+    plt.savefig('2_performance_signal.png', dpi=DPI, bbox_inches='tight')
+    print("Plots saved as 2_performance_performance.png, 2_performance_accuracy.png, and 2_performance_signal.png")
 
     # Plot errors
     plt.figure(figsize=(12, 8))
@@ -284,7 +284,7 @@ def plot_fft_results(json_file='fft_benchmark.json'):
     plt.title('FFT Accuracy Comparison Across Libraries (1D Signals)')
     plt.grid(True, which="both", ls="-", alpha=0.2)
     plt.legend()
-    plt.savefig('fft_benchmark_accuracy.png', dpi=DPI, bbox_inches='tight')
+    plt.savefig('2_performance_accuracy.png', dpi=DPI, bbox_inches='tight')
     # Sample signal and FFT
     plt.figure(figsize=(12, 8))
     sample_size = 1000
@@ -320,8 +320,8 @@ def plot_fft_results(json_file='fft_benchmark.json'):
     plt.ylabel('Magnitude')
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig('fft_benchmark_signal.png', dpi=DPI, bbox_inches='tight')
-    print("Plots saved as fft_benchmark_performance.png, fft_benchmark_accuracy.png, and fft_benchmark_signal.png")
+    plt.savefig('2_performance_signal.png', dpi=DPI, bbox_inches='tight')
+    print("Plots saved as 2_performance_performance.png, 2_performance_accuracy.png, and 2_performance_signal.png")
 
 # Call the plot function if this script is run directly
 if __name__ == "__main__":

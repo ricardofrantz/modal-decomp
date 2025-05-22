@@ -93,12 +93,12 @@ def test_fft_normalization(x, N, freq=FREQ, amplitude=AMPLITUDE, fs=FS):
             continue
     plt.xlabel('Frequency [Hz]')
     plt.ylabel('Amplitude')
-    plt.title('FFT Amplitude Spectrum by Backend')
+    plt.title('FFT Amplitude Spectrum by Backend in 1_checks.py')
     plt.legend()
     plt.tight_layout()
-    plt.savefig('fft_checks_spectrum.png')
+    plt.savefig('1_checks_spectrum.png')
     plt.close()
-    print("Saved spectrum plot as fft_checks_spectrum.png")
+    print(f"Saved spectrum plot as 1_checks_spectrum.png in {os.path.dirname(__file__)}")
 
 
 def test_fft_inverse_consistency(x, N):

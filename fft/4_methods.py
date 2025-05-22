@@ -231,7 +231,7 @@ for i in range(1, 4):
 
 # Adjust layout and save figure
 plt.tight_layout()
-plt.savefig('fft_spectral_methods_comparison_spectral_analysis.png', dpi=400, bbox_inches='tight')
+plt.savefig('4_methods_spectral_analysis.png', dpi=400, bbox_inches='tight')
 
 # Process results
 method_performance = {}
@@ -271,7 +271,7 @@ for method, data in method_performance.items():
                  xytext=(5, 5), textcoords='offset points')
 
 plt.tight_layout()
-plt.savefig('fft_spectral_methods_comparison_performance_vs_time.png', dpi=400, bbox_inches='tight')
+plt.savefig('4_methods_perf.png', dpi=400, bbox_inches='tight')
 
 # Print performance table
 print("\nPerformance Table:")
@@ -342,7 +342,7 @@ plt.title("Error vs Noise Level for Different Numbers of Periods")
 plt.legend(title="Periods of T2")
 plt.yscale('log')
 plt.grid(True)
-plt.savefig('fft_spectral_methods_comparison_error_vs_noise.png', dpi=400, bbox_inches='tight')
+plt.savefig('4_methods_error_vs_noise.png', dpi=400, bbox_inches='tight')
 
 print("Results:")
 for noise_level, data in results_by_noise.items():
