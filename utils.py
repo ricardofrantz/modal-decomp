@@ -6,7 +6,7 @@ All imports are centralized here to keep the code clean and consistent.
 """
 
 from configs import *
-from fft_backends import get_fft_func
+from fft.fft_backends import get_fft_func
 
 
 def make_result_filename(root, nfft, overlap, Ns, analysis):
