@@ -9,6 +9,9 @@ pyModal is the only open-source package to combine POD + SPOD and BSMD in a sing
 - **Proper Orthogonal Decomposition (POD)**
   Performs a weighted singular value decomposition of mean-subtracted snapshots
   to recover energy-ranked spatial modes and their temporal coefficients.
+  Periodograms of the time coefficients are plotted in Hertz using the
+  sampling interval `dt`. Multiply the frequency axis by `L/U` to express
+  results in the dimensionless Strouhal number when physical scales are known.
 
 - **Spectral Proper Orthogonal Decomposition (SPOD)**
   Solves the cross-spectral density eigenvalue problem to yield energy-ranked,
@@ -101,8 +104,9 @@ pytest
 ### Parallel Execution
 
 FFT and matrix operations rely on NumPy's multithreaded BLAS libraries.
-The number of threads is taken from the `OMP_NUM_THREADS` environment
-variable when present; otherwise all available CPU cores are used.
+Only the underlying BLAS/LAPACK routines honor the `OMP_NUM_THREADS`
+environment variable automatically. Other Python code typically runs
+single-threaded.
 
 Check which optimizations are active by running:
 
@@ -156,7 +160,7 @@ Intermediate FFT blocks (`qhat`) are stored in HDF5 files whose names are genera
 
 ### Threads and performance
 
-FFT computation uses the backend specified in `configs.py` and automatically leverages the multithreaded BLAS library shipped with NumPy. The helper `get_num_threads()` reports the number of threads (taken from `OMP_NUM_THREADS` when set).
+FFT computation uses the backend specified in `configs.py` and automatically leverages the multithreaded BLAS library shipped with NumPy. The helper `get_num_threads()` reports the number of threads requested via `OMP_NUM_THREADS`, but only BLAS/LAPACK operations use these threads by default.
 
 ### Extending the code
 

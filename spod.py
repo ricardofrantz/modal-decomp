@@ -2,6 +2,7 @@
 import argparse
 import os
 import time
+import warnings
 
 import h5py
 import matplotlib.colors as colors
@@ -12,6 +13,7 @@ import numpy as np
 from tqdm import tqdm
 
 from configs import (
+    CMAP_DIV,
     FIG_DPI,
     FIG_FORMAT,
     FIGURES_DIR_SPOD,
@@ -265,7 +267,7 @@ class SPODAnalyzer(BaseAnalyzer):
     ############################################################
     # Core SPOD Computation                                    #
     ############################################################
-    def perform_spod(self):
+    def perform_spod(self, weights=None):
         """
         Performs the core SPOD analysis (eigenvalue decomposition for each frequency).
 
@@ -306,13 +308,14 @@ class SPODAnalyzer(BaseAnalyzer):
 
         print("Performing SPOD for each frequency...")
 
+        weights = weights if weights is not None else self.W
         for i in tqdm(range(num_freq_bins), desc="SPOD Computation", unit="freq"):
             qhat_freq = self.qhat[i, :, :]
             phi_freq, lambda_freq, psi_freq = spod_function(
                 qhat_freq,
                 self.nblocks,
                 self.dst,
-                self.W,
+                weights,
                 return_psi=True,
                 use_parallel=self.use_parallel,
             )
@@ -484,6 +487,8 @@ class SPODAnalyzer(BaseAnalyzer):
             np.broadcast_to(y_coords_mesh[:, None], (num_y_points_mesh, len(St_plot))),
             np.nan,
         )
+        # Mask NaNs to avoid matplotlib warnings when using LogNorm
+        C_fill_data = np.ma.masked_invalid(C_fill_data)
 
         norm_vmin = np.min(y_coords_mesh[y_coords_mesh > 0])
         norm_vmax = np.max(y_coords_mesh)
@@ -531,7 +536,9 @@ class SPODAnalyzer(BaseAnalyzer):
         plt.close(fig)
         print(f"SPOD eigenvalue plot (v2) saved to {plot_filename}")
 
-    def plot_modes(self, freqs_to_plot=None, plot_n_modes: int | None = 10, modes_per_fig: int = 1) -> None:
+    from typing import Optional
+
+    def plot_modes(self, freqs_to_plot=None, plot_n_modes: Optional[int] = 10, modes_per_fig: int = 1) -> None:
         """Plot spatial modes for selected frequencies as individual figures."""
 
         if self.modes.size == 0 or self.St.size == 0:
@@ -585,32 +592,48 @@ class SPODAnalyzer(BaseAnalyzer):
                     ax = axes[j]
                     mode_real = self.modes[f_idx, :, m_idx].real
                     if Nx * Ny == mode_real.size and Nx > 1 and Ny > 1:
-                        mode_2d = mode_real.reshape(Nx, Ny).T
-                        im = ax.contourf(x_coords, y_coords, mode_2d, levels=60, cmap="bwr")
-                        ax.set_aspect("auto")
+                        mode_2d = mode_real.reshape(Nx, Ny)
+                        if x_coords.ndim == 1 and y_coords.ndim == 1:
+                            X, Y = np.meshgrid(x_coords, y_coords, indexing="ij")
+                        else:
+                            X, Y = x_coords, y_coords
+                        dist = np.sqrt(X**2 + Y**2)
+                        cyl_mask = dist <= 0.5
+                        mode_plot = np.ma.array(mode_2d, mask=np.isnan(mode_2d) | cyl_mask)
+                        vmax = np.max(np.abs(mode_plot))
+                        levels = np.linspace(-vmax, vmax, 21)
+                        im = ax.contourf(X, Y, mode_plot, levels=levels, cmap=CMAP_DIV, extend="both")
+                        ax.contour(X, Y, mode_plot, levels=levels[::4], colors="k", linewidths=0.5, alpha=0.5)
+                        ax.add_patch(plt.Circle((0, 0), 0.5, facecolor="lightgray", edgecolor="black", linewidth=0.5))
+                        ax.set_aspect("equal", "box")
+                        ax.set_xlim(np.min(x_coords), np.max(x_coords))
+                        ax.set_ylim(np.min(y_coords), np.max(y_coords))
                         fig.colorbar(im, ax=ax, shrink=0.8, label=r"Re($\Phi$)")
-                        ax.set_xlabel("X")
-                        ax.set_ylabel("Y")
+                        ax.set_xlabel(r"$x/D$")
+                        ax.set_ylabel(r"$y/D$")
+                        ax.grid(True, linestyle="--", alpha=0.3)
                     else:
                         ax.plot(mode_real)
                         ax.set_xlabel("Spatial index")
                         ax.set_ylabel("Amplitude")
                     ax.set_title(f"SPOD Mode {m_idx + 1} at St={st_val:.4f} [{var_name}]")
 
-                fig.tight_layout()
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", UserWarning)
+                    fig.tight_layout()
                 if modes_per_fig == 1 and ncols == 1:
                     fname = os.path.join(
                         self.figures_dir,
-                        f"{self.data_root}_SPOD_mode{start + 1}_St{st_val:.4f}_{var_name}.png",
+                        f"{self.data_root}_SPOD_mode{start + 1}_freq{f_idx}_{var_name}.png",
                     )
                 else:
                     fname = os.path.join(
                         self.figures_dir,
-                        f"{self.data_root}_SPOD_modes_{start + 1}_to_{end}_St{st_val:.4f}_{var_name}.png",
+                        f"{self.data_root}_SPOD_modes_{start + 1}_to_{end}_freq{f_idx}_{var_name}.png",
                     )
                 fig.savefig(fname, dpi=FIG_DPI)
                 plt.close(fig)
-                print(f"SPOD modes {start + 1}-{end} at St={st_val:.4f} saved to {fname}")
+                print(f"SPOD modes {start + 1}-{end} at St={st_val:.4f} (freq index {f_idx}) saved to {fname}")
 
     def plot_cumulative_energy(self, freq_idx=None):
         """Plot cumulative energy captured by modes at a given frequency."""
@@ -629,7 +652,7 @@ class SPODAnalyzer(BaseAnalyzer):
         ax.set_title(f"Cumulative energy at St={self.St[freq_idx]:.3f}")
         plot_filename = os.path.join(
             self.figures_dir,
-            f"{self.data_root}_SPOD_cumulative_St{self.St[freq_idx]:.3f}.{FIG_FORMAT}",
+            f"{self.data_root}_SPOD_cumulative_freq{freq_idx}.{FIG_FORMAT}",
         )
         plt.savefig(plot_filename, dpi=FIG_DPI)
         plt.close(fig)
@@ -660,7 +683,7 @@ class SPODAnalyzer(BaseAnalyzer):
         ax.set_title(f"SPOD Time Coefficients at St={self.St[freq_idx]:.4f}")
         plot_filename = os.path.join(
             self.figures_dir,
-            f"{self.data_root}_SPOD_timecoeffs_St{self.St[freq_idx]:.4f}_nfft{self.nfft}_noverlap{self.overlap}.{FIG_FORMAT}",
+            f"{self.data_root}_SPOD_timecoeffs_freq{freq_idx}_nfft{self.nfft}_noverlap{self.overlap}.{FIG_FORMAT}",
         )
         plt.savefig(plot_filename, dpi=FIG_DPI)
         plt.close(fig)
@@ -681,13 +704,15 @@ class SPODAnalyzer(BaseAnalyzer):
         if n_modes_max is None:
             n_modes_max = n_modes_avail
         n_modes_max = min(n_modes_max, n_modes_avail)
-        W = np.diag(self.W.flatten()) if self.W.ndim == 1 else self.W
+        W = np.diagflat(self.W) if self.W.ndim == 1 or self.W.shape[1] == 1 else self.W
         norm_orig = np.linalg.norm(qhat_f, "fro")
         errors = []
         mode_counts = range(1, n_modes_max + 1)
         for k in mode_counts:
             phi_k = modes_f[:, :k]
             coeffs = phi_k.conj().T @ W @ qhat_f
+            if coeffs.shape != (k, qhat_f.shape[1]):
+                raise ValueError(f"Coefficient matrix has unexpected shape: {coeffs.shape}, expected ({k}, {qhat_f.shape[1]})")
             qrec = phi_k @ coeffs
             errors.append(np.linalg.norm(qhat_f - qrec, "fro") / norm_orig)
         fig, ax = plt.subplots()
@@ -698,7 +723,7 @@ class SPODAnalyzer(BaseAnalyzer):
         ax.set_title(f"Reconstruction Error at St={self.St[freq_idx]:.4f}")
         plot_filename = os.path.join(
             self.figures_dir,
-            f"{self.data_root}_SPOD_reconstruction_error_St{self.St[freq_idx]:.4f}_nfft{self.nfft}_noverlap{self.overlap}.{FIG_FORMAT}",
+            f"{self.data_root}_SPOD_reconstruction_error_freq{freq_idx}_nfft{self.nfft}_noverlap{self.overlap}.{FIG_FORMAT}",
         )
         plt.savefig(plot_filename, dpi=FIG_DPI)
         plt.close(fig)
@@ -723,7 +748,7 @@ class SPODAnalyzer(BaseAnalyzer):
         ax.legend()
         plot_filename = os.path.join(
             self.figures_dir,
-            f"{self.data_root}_SPOD_complex_St{self.St[freq_idx]:.4f}_nfft{self.nfft}_noverlap{self.overlap}.{FIG_FORMAT}",
+            f"{self.data_root}_SPOD_complex_freq{freq_idx}_nfft{self.nfft}_noverlap{self.overlap}.{FIG_FORMAT}",
         )
         plt.savefig(plot_filename, dpi=FIG_DPI)
         plt.close(fig)
@@ -738,8 +763,9 @@ if __name__ == "__main__":
     parser.add_argument("--plot", action="store_true", help="Generate default plots")
     args = parser.parse_args()
 
-    threads_available = get_num_threads()
-    print(f"Available CPU threads detected: {threads_available}")
+    from parallel_utils import get_threadpool_summary
+
+    print(f"Thread pools: {get_threadpool_summary()}")
 
     print_optimization_status()
 
@@ -752,7 +778,7 @@ if __name__ == "__main__":
     # data_file = "./data/jetLES_small.mat"  # Updated data path
     # data_file = "./data/jetLES.mat"  # Path to your data file
     # data_file = "./data/cavityPIV.mat"  # Path to your data file
-    data_file = "./data/consolidated_data.npz"
+    data_file = "./data/snp1-947_u.npz"
 
     # Default parameters
     nfft_param = 128  # FFT block size

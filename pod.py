@@ -27,7 +27,6 @@ import matplotlib.pyplot as plt
 # Third-party imports
 import numpy as np
 import scipy.linalg  # For eigh
-from scipy import signal
 
 from configs import (
     CMAP_DIV,
@@ -36,6 +35,7 @@ from configs import (
     FIGURES_DIR_POD,
     RESULTS_DIR_POD,
 )
+from fft.spectral_utils import find_peaks, periodogram_rfft
 from parallel_utils import print_optimization_status
 
 # Local application/library specific imports
@@ -703,7 +703,7 @@ class PODAnalyzer(BaseAnalyzer):
         plt.close(fig)
         print(f"Saving figure {plot_filename}")
 
-    def plot_time_coefficients(self, n_coeffs_to_plot=2, n_snapshots_plot=None):
+    def plot_time_coefficients(self, n_coeffs_to_plot=2, n_snapshots_plot=None, L=1.0, U=1.0):
         """Plot the temporal coefficients for selected modes.
 
         Displays the time evolution of the coefficients for the first `n_coeffs_to_plot` modes.
@@ -713,9 +713,16 @@ class PODAnalyzer(BaseAnalyzer):
 
         Args:
             n_coeffs_to_plot (int, optional): Number of leading temporal coefficients to plot.
-                                            Defaults to 2.
+                Defaults to 2.
             n_snapshots_plot (int, optional): Number of time snapshots to include in the plot.
                                               If None, all snapshots are used. Defaults to None.
+            L (float, optional): Characteristic length for Strouhal number conversion. Defaults to ``1.0``.
+            U (float, optional): Characteristic velocity for Strouhal number conversion. Defaults to ``1.0``.
+
+        The periodogram axis is always shown in terms of Strouhal number.  The
+        frequencies are converted according to ``freqs_st = freqs * L / U``.  With
+        the default ``L = U = 1`` the plot displays the unscaled frequencies but
+        labeled as Strouhal numbers.
         """
         if self.time_coefficients.size == 0:
             print("No time coefficients to plot. Run perform_pod() first.")
@@ -748,9 +755,21 @@ class PODAnalyzer(BaseAnalyzer):
             plt.xlim(time_vector.min(), time_vector.max())
 
             plt.subplot(n_coeffs_to_plot, 2, 2 * i + 2)
-            freqs, psd = signal.periodogram(coeff, self.fs, scaling="density")
+            freqs, psd = periodogram_rfft(coeff, self.fs)
+            peak_freqs, peak_psd = find_peaks(freqs, psd)
+            
+            if L is not None and U is not None:
+                freqs = freqs * L / U
+            xlabel = "Strouhal Number (St)"
             plt.semilogy(freqs, psd)
-            plt.xlabel("Frequency")
+            if peak_freqs.size > 0:
+                plt.plot(peak_freqs, peak_psd, "o")
+                for pf, pv in zip(peak_freqs, peak_psd):
+                    plt.text(pf, pv, f"{pf:.2f}", fontsize=8, ha="left", va="bottom")
+            plt.xscale("log")
+            plt.xlim(1e-1, 1e4)
+            plt.ylim(1e-6, None)
+            plt.xlabel(xlabel)
             plt.ylabel("PSD")
             plt.title(f"Periodogram Mode {i + 1}")
             plt.grid(True, linestyle=":")
@@ -1130,8 +1149,7 @@ class PODAnalyzer(BaseAnalyzer):
         # Perform POD
         self.perform_pod()
 
-        # Identify correlated mode pairs before plotting
-        list(self.check_mode_pair_phase())
+        # Identify correlated mode pairs only when plotting
 
         # Save results
         self.save_results()  # This already calls super().save_results()
@@ -1183,7 +1201,7 @@ if __name__ == "__main__":
     # data_file = "./data/jetLES_small.mat"  # Updated data path
     # data_file = "./data/jetLES.mat"  # Path to your data file
     # data_file = "./data/cavityPIV.mat"  # Path to your data file
-    data_file = "./data/consolidated_data.npz"  # Path to your data file
+    data_file = "./data/snp1-947_u.npz"  # Path to your data file
 
     n_modes_to_save_main = 10  # Number of POD modes to save
     n_modes_to_plot_spatial_main = 4  # Number of spatial modes to visualize
@@ -1220,10 +1238,8 @@ if __name__ == "__main__":
                 plot_n_modes_spatial=n_modes_to_plot_spatial_main,
                 plot_n_coeffs_time=n_coeffs_to_plot_time_main,
             )
-        if args.plot:
-            # Only load results if we haven't already computed them
-            if not args.compute:
-                analyzer.load_results()
+        elif args.plot:
+            analyzer.load_results()
             analyzer.plot_eigenvalues()
             analyzer.plot_modes_pair_detailed(plot_n_modes=n_modes_to_plot_spatial_main)
             analyzer.plot_modes_grid(energy_threshold=99.7)
@@ -1231,4 +1247,3 @@ if __name__ == "__main__":
             analyzer.plot_cumulative_energy()
             analyzer.plot_reconstruction_error()
             analyzer.plot_reconstruction_comparison()
-        print_summary("POD", analyzer.results_dir, analyzer.figures_dir)

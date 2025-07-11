@@ -35,6 +35,7 @@ from scipy.sparse import linalg as splinalg
 from tqdm import tqdm
 
 from configs import (
+    CMAP_DIV,
     CMAP_SEQ,
     FIGURES_DIR_BSMD,
     RESULTS_DIR_BSMD,
@@ -244,6 +245,7 @@ class BSMDAnalyzer(BaseAnalyzer):
         self.modes2 = np.array([])
         self.freq = None
         self.St = None
+        self.energy_map = np.array([])
 
     def load_and_preprocess(self):
         """
@@ -504,6 +506,9 @@ class BSMDAnalyzer(BaseAnalyzer):
 
         print(f"Static BSMD core analysis completed in {time.time() - start_time:.2f} seconds.")
 
+        # Build energy map for quick visualisation
+        self.energy_map = self._compute_energy_map()
+
     def perform_dynamic_bsmd(self):
         """
         Perform BSMD with dynamically identified triads (Placeholder).
@@ -515,6 +520,21 @@ class BSMDAnalyzer(BaseAnalyzer):
         Currently, this method will raise a NotImplementedError.
         """
         raise NotImplementedError("Dynamic BSMD is not yet implemented.")
+
+    def _compute_energy_map(self):
+        """Return a 2D map of eigenvalue magnitudes indexed by (p1,p2)."""
+        if self.eigenvalues.size == 0:
+            return np.array([])
+
+        offset = 8
+        size = 2 * offset + 1
+        grid = np.full((size, size), np.nan)
+        for val, (p1, p2, _p3) in zip(np.abs(self.eigenvalues), self.triads):
+            i = int(p1) + offset
+            j = int(p2) + offset
+            if 0 <= i < size and 0 <= j < size:
+                grid[i, j] = val
+        return grid
 
     # Save triads, eigenvalues, modes, and weights to HDF5.
     def save_results(self, fname=None):
@@ -556,9 +576,13 @@ class BSMDAnalyzer(BaseAnalyzer):
             f.create_dataset("x", data=self.data["x"])
             f.create_dataset("y", data=self.data["y"])
             f.create_dataset("W", data=self.W)
+            if self.energy_map.size:
+                f.create_dataset("energy_map", data=self.energy_map)
         print(f"Results saved to {results_path}")
 
-    def plot_modes(self, triad_indices=None, top_n=3, plot_n_modes: int | None = 10):
+    from typing import Optional
+
+    def plot_modes(self, triad_indices=None, top_n=3, plot_n_modes: Optional[int] = 10):
         """Plot spatial BSMD modes for selected triads."""
         if self.modes1.size == 0 or self.modes2.size == 0:
             print("No BSMD modes to plot. Run perform_bsmd() first.")
@@ -584,43 +608,114 @@ class BSMDAnalyzer(BaseAnalyzer):
         )
 
         for idx in triad_indices:
-            mode1 = self.modes1[idx, :].real.reshape(nx, ny).T
-            mode2 = self.modes2[idx, :].real.reshape(nx, ny).T
+            # Reshape mode vectors into the spatial grid.  No transpose is
+            # required here because ``x`` and ``y`` coordinates are assumed to
+            # follow the same (Nx, Ny) ordering as the stored modes.  The
+            # previous transpose caused a mismatch when the coordinates were
+            # provided as full 2D arrays.
+            mode1 = self.modes1[idx, :].real.reshape(nx, ny)
+            mode2 = self.modes2[idx, :].real.reshape(nx, ny)
             triad = self.triads[idx]
-            fig, axes = plt.subplots(
-                1,
-                2,
-                figsize=(8 * fig_aspect, 4),
-            )
-            im1 = axes[0].imshow(
-                mode1,
-                origin="lower",
-                extent=extent,
-                cmap=CMAP_SEQ,
-                aspect="auto",
-            )
-            axes[0].set_title(f"Triad {tuple(triad)} Phi1 [{var_name}]")
-            axes[0].set_xlabel("X")
-            axes[0].set_ylabel("Y")
-            fig.colorbar(im1, ax=axes[0], shrink=0.8)
 
-            im2 = axes[1].imshow(
-                mode2,
-                origin="lower",
-                extent=extent,
-                cmap=CMAP_SEQ,
-                aspect="auto",
+            if x_coords.ndim == 1 and y_coords.ndim == 1:
+                x_mesh, y_mesh = np.meshgrid(x_coords, y_coords, indexing="ij")
+            else:
+                x_mesh, y_mesh = x_coords, y_coords
+            dist = np.sqrt(x_mesh**2 + y_mesh**2)
+            cylinder_mask = dist <= 0.5
+
+            fig, axes = plt.subplots(1, 2, figsize=(8 * fig_aspect, 4))
+
+            field1 = np.ma.array(mode1, mask=cylinder_mask)
+            vmax1 = np.max(np.abs(field1))
+            levels1 = np.linspace(-vmax1, vmax1, 21)
+            cf1 = axes[0].contourf(
+                x_mesh,
+                y_mesh,
+                field1,
+                levels=levels1,
+                cmap=CMAP_DIV,
+                extend="both",
             )
+            axes[0].contour(
+                x_mesh,
+                y_mesh,
+                field1,
+                levels=levels1[::4],
+                colors="k",
+                linewidths=0.5,
+                alpha=0.5,
+            )
+            axes[0].add_patch(plt.Circle((0, 0), 0.5, facecolor="lightgray", edgecolor="black", linewidth=0.5))
+            axes[0].set_title(f"Triad {tuple(triad)} Phi1 [{var_name}]")
+            axes[0].set_xlabel(r"$x/D$")
+            axes[0].set_ylabel(r"$y/D$")
+            axes[0].set_aspect("equal", "box")
+            axes[0].set_xlim(x_coords.min(), x_coords.max())
+            axes[0].set_ylim(y_coords.min(), y_coords.max())
+            axes[0].grid(True, linestyle="--", alpha=0.3)
+            fig.colorbar(cf1, ax=axes[0], shrink=0.8)
+
+            field2 = np.ma.array(mode2, mask=cylinder_mask)
+            vmax2 = np.max(np.abs(field2))
+            levels2 = np.linspace(-vmax2, vmax2, 21)
+            cf2 = axes[1].contourf(
+                x_mesh,
+                y_mesh,
+                field2,
+                levels=levels2,
+                cmap=CMAP_DIV,
+                extend="both",
+            )
+            axes[1].contour(
+                x_mesh,
+                y_mesh,
+                field2,
+                levels=levels2[::4],
+                colors="k",
+                linewidths=0.5,
+                alpha=0.5,
+            )
+            axes[1].add_patch(plt.Circle((0, 0), 0.5, facecolor="lightgray", edgecolor="black", linewidth=0.5))
             axes[1].set_title(f"Triad {tuple(triad)} Phi2 [{var_name}]")
-            axes[1].set_xlabel("X")
-            axes[1].set_ylabel("Y")
-            fig.colorbar(im2, ax=axes[1], shrink=0.8)
+            axes[1].set_xlabel(r"$x/D$")
+            axes[1].set_ylabel(r"$y/D$")
+            axes[1].set_aspect("equal", "box")
+            axes[1].set_xlim(x_coords.min(), x_coords.max())
+            axes[1].set_ylim(y_coords.min(), y_coords.max())
+            axes[1].grid(True, linestyle="--", alpha=0.3)
+            fig.colorbar(cf2, ax=axes[1], shrink=0.8)
 
             fig.tight_layout()
             fname = os.path.join(self.figures_dir, f"{self.data_root}_BSMD_triad{idx}_{var_name}.png")
             plt.savefig(fname)
             plt.close(fig)
             print(f"BSMD mode plot saved to {fname}")
+
+    def plot_energy_map(self):
+        """Plot a 2D heatmap of eigenvalue magnitudes indexed by triad frequencies."""
+        if self.energy_map.size == 0:
+            print("No energy map available. Run perform_bsmd() first.")
+            return
+
+        extent = (-8.5, 8.5, -8.5, 8.5)
+        fig, ax = plt.subplots(figsize=(6, 5))
+        im = ax.imshow(
+            self.energy_map,
+            origin="lower",
+            extent=extent,
+            cmap=CMAP_SEQ,
+            aspect="equal",
+        )
+        ax.set_xlabel("p1 index")
+        ax.set_ylabel("p2 index")
+        ax.set_title("BSMD energy map |lambda|")
+        fig.colorbar(im, ax=ax, shrink=0.8)
+        fig.tight_layout()
+        fname = os.path.join(self.figures_dir, f"{self.data_root}_BSMD_energy_map.png")
+        plt.savefig(fname)
+        plt.close(fig)
+        print(f"Energy map saved to {fname}")
 
     # Execute the full BSMD pipeline.
     def run_analysis(self):
@@ -654,12 +749,13 @@ if __name__ == "__main__":
     parser.add_argument("--plot", action="store_true", help="Generate example plots")
     args = parser.parse_args()
 
-    threads_available = get_num_threads()
-    print(f"Available CPU threads detected: {threads_available}")
+    from parallel_utils import get_threadpool_summary
+
+    print(f"Thread pools: {get_threadpool_summary()}")
 
     print_optimization_status()
 
-    data_file = "./data/consolidated_data.npz"
+    data_file = "./data/snp1-947_u.npz"
 
     if DNamiXNPZLoader is not None and data_file.endswith(".npz"):
         loader = DNamiXNPZLoader()
@@ -710,6 +806,7 @@ if __name__ == "__main__":
                     plt.savefig(os.path.join(figures_dir, f"{analyzer.data_root}_BSMD_eigenvalues.png"))
                     plt.close()
                     analyzer.plot_modes()
+                    analyzer.plot_energy_map()
             if run_all:
                 print_summary("BSMD", analyzer.results_dir, analyzer.figures_dir)
         exit(0)
@@ -761,6 +858,7 @@ if __name__ == "__main__":
                 plt.savefig(os.path.join(FIGURES_DIR_BSMD, f"{analyzer.data_root}_BSMD_eigenvalues.png"))
                 plt.close()
                 analyzer.plot_modes()
+                analyzer.plot_energy_map()
 
         if run_all:
             print_summary("BSMD", analyzer.results_dir, analyzer.figures_dir)
