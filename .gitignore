@@ -3,3 +3,4 @@ __pycache__
 .ruff_cache
 **/results_*
 data/consolidated_data.npz
+.DS_Store
