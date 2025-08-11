@@ -257,6 +257,17 @@ class PODAnalyzer(BaseAnalyzer):
             filename = f"{self.data_root}_{self.data.get('Ns', 0)}snapshots_{self.analysis_type}.hdf5"
         load_path = os.path.join(self.results_dir, filename)
         print(f"Loading POD results from {load_path}")
+        if not os.path.isfile(load_path):
+            # Try to auto-detect a results file for this variable and analysis type
+            import glob
+            pattern = os.path.join(self.results_dir, f"*_{self.analysis_type}.hdf5")
+            matches = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
+            if matches:
+                load_path = matches[0]
+                print(f"[Auto-detect] Using available results file: {load_path}")
+            else:
+                print(f"[ERROR] No results file found for plotting in {self.results_dir} matching '*_{self.analysis_type}.hdf5'. Run with --compute first.")
+                return  # Or: raise FileNotFoundError("No POD results file found for plotting.")
         with h5py.File(load_path, "r") as f:
             # Load coordinates and weights (if present)
             if "x" in f:
@@ -747,7 +758,7 @@ class PODAnalyzer(BaseAnalyzer):
         for i in range(n_coeffs_to_plot):
             plt.subplot(n_coeffs_to_plot, 2, 2 * i + 1)
             coeff = self.time_coefficients[:n_snapshots_plot, i]
-            plt.plot(time_vector, coeff, linewidth=1.5)
+            plt.plot(time_vector, coeff, ls='-', lw=0.8, marker='o', markersize=1)
             plt.xlabel("Time")
             plt.ylabel(f"Amplitude Mode {i + 1}")
             plt.title(f"Temporal Coefficient for POD Mode {i + 1}")
@@ -763,11 +774,15 @@ class PODAnalyzer(BaseAnalyzer):
             xlabel = "Strouhal Number (St)"
             plt.semilogy(freqs, psd)
             if peak_freqs.size > 0:
-                plt.plot(peak_freqs, peak_psd, "o")
+                plt.plot(peak_freqs, peak_psd, ls='-', lw=0.8, marker='o', markersize=2, )
                 for pf, pv in zip(peak_freqs, peak_psd):
                     plt.text(pf, pv, f"{pf:.2f}", fontsize=8, ha="left", va="bottom")
             plt.xscale("log")
-            plt.xlim(1e-1, 1e4)
+            if peak_freqs.size > 0:
+                xlim_min = 0.7 * peak_freqs[0]
+                plt.xlim(xlim_min, self.fs / 2)
+            else:
+                plt.xlim(1e-3, self.fs / 2)
             plt.ylim(1e-6, None)
             plt.xlabel(xlabel)
             plt.ylabel("PSD")
@@ -1217,7 +1232,6 @@ if __name__ == "__main__":
 
     for field in available_fields:
         print(f"\n===== Running POD for variable: {field} =====")
-        data = loader.load(data_file, field=field)
         # Set up variable-specific result and figure directories
         results_dir = os.path.join(RESULTS_DIR_POD, field)
         figures_dir = os.path.join(FIGURES_DIR_POD, field)
@@ -1231,13 +1245,19 @@ if __name__ == "__main__":
             n_modes_save=n_modes_to_save_main,
             spatial_weight_type="uniform",
         )
-        analyzer.data = data
         analyzer.analysis_type = f"pod_{field}"
-        if args.compute:
-            analyzer.run_analysis(
-                plot_n_modes_spatial=n_modes_to_plot_spatial_main,
-                plot_n_coeffs_time=n_coeffs_to_plot_time_main,
-            )
+
+        if args.compute or args.prep:
+            data = loader.load(data_file, field=field)
+            analyzer.data = data
+            if args.compute:
+                analyzer.run_analysis(
+                    plot_n_modes_spatial=n_modes_to_plot_spatial_main,
+                    plot_n_coeffs_time=n_coeffs_to_plot_time_main,
+                )
+            elif args.prep:
+                analyzer.load_and_preprocess()
+                # Optionally save preprocessed data if needed
         elif args.plot:
             analyzer.load_results()
             analyzer.plot_eigenvalues()

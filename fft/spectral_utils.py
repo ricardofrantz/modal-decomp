@@ -1,6 +1,9 @@
 import numpy as np
 from scipy import signal
-from scipy.fft import rfft, rfftfreq
+try:
+    from scipy.fft import rfft, rfftfreq  # SciPy >= 1.4.0
+except ImportError:
+    from scipy.fftpack import rfft, rfftfreq  # SciPy < 1.4.0
 
 
 def periodogram_rfft(x, fs):

@@ -819,7 +819,6 @@ if __name__ == "__main__":
         print(f"Available fields in {data_file}: {available_fields}")
         for field in available_fields:
             print(f"\n===== Running SPOD for variable: {field} =====")
-            data = loader.load(data_file, field=field)
             results_dir = os.path.join(RESULTS_DIR_SPOD, field)
             figures_dir = os.path.join(FIGURES_DIR_SPOD, field)
             os.makedirs(results_dir, exist_ok=True)
@@ -831,18 +830,22 @@ if __name__ == "__main__":
                 data_loader=lambda fp: loader.load(fp, field=field),
                 spatial_weight_type="uniform",
             )
-            analyzer.data = data
             analyzer.analysis_type = f"spod_{field}"
+
             run_all = not (args.prep or args.compute or args.plot)
             if run_all or args.prep:
+                data = loader.load(data_file, field=field)
+                analyzer.data = data
                 analyzer.load_and_preprocess()
                 analyzer.compute_fft_blocks()
             if run_all or args.compute:
-                if analyzer.qhat.size == 0:
+                if analyzer.data == {}:
                     analyzer.load_and_preprocess()
                     analyzer.compute_fft_blocks()
                 analyzer.perform_spod()
                 analyzer.save_results()
+                analyzer.plot_eigenvalues_v2()
+                analyzer.plot_modes()
             if run_all or args.plot:
                 if analyzer.eigenvalues.size == 0 or analyzer.St.size == 0:
                     print("No SPOD results to plot. Run with --compute first.")

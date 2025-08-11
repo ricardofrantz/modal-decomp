@@ -143,7 +143,16 @@ class DMDAnalyzer(BaseAnalyzer):
         path = os.path.join(self.results_dir, filename)
 
         if not os.path.exists(path):
-            raise FileNotFoundError(f"DMD results file not found: {path}")
+            # Try to auto-detect a results file for this variable and analysis type
+            import glob
+            pattern = os.path.join(self.results_dir, f"*_{self.analysis_type}.hdf5")
+            matches = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
+            if matches:
+                path = matches[0]
+                print(f"[Auto-detect] Using available results file: {path}")
+            else:
+                print(f"[ERROR] No results file found for plotting in {self.results_dir} matching '*_{self.analysis_type}.hdf5'. Run with --compute first.")
+                return  # Or: raise FileNotFoundError("No DMD results file found for plotting.")
 
         with h5py.File(path, "r") as f:
             self.eigenvalues = f["eigenvalues"][:]
@@ -590,7 +599,6 @@ if __name__ == "__main__":
         print(f"Available fields in {data_file}: {available_fields}")
         for field in available_fields:
             print(f"\n===== Running DMD for variable: {field} =====")
-            data = loader.load(data_file, field=field)
             results_dir = os.path.join(RESULTS_DIR_DMD, field)
             figures_dir = os.path.join(FIGURES_DIR_DMD, field)
             os.makedirs(results_dir, exist_ok=True)
@@ -603,21 +611,24 @@ if __name__ == "__main__":
                 n_modes_save=n_modes_to_save_main,
                 spatial_weight_type="uniform",
             )
-            analyzer.data = data
             analyzer.analysis_type = f"dmd_{field}"
 
-            if args.plot:
-                # Only load results and plot, do not recompute
+            if args.compute or args.prep:
+                data = loader.load(data_file, field=field)
+                analyzer.data = data
+                if args.compute:
+                    analyzer.perform_dmd()
+                    analyzer.save_results()
+                    analyzer.plot_eigenspectra()
+                    analyzer.plot_modes_detailed(plot_n_modes=n_modes_to_plot_spatial_main)
+                    analyzer.plot_time_coefficients(n_coeffs_to_plot=n_coeffs_to_plot_time_main)
+                    analyzer.plot_cumulative_energy()
+                    analyzer.plot_reconstruction_error()
+                elif args.prep:
+                    analyzer.load_and_preprocess()
+                    # Optionally save preprocessed data if needed
+            elif args.plot:
                 analyzer.load_results()
-                analyzer.plot_eigenspectra()
-                analyzer.plot_modes_detailed(plot_n_modes=n_modes_to_plot_spatial_main)
-                analyzer.plot_time_coefficients(n_coeffs_to_plot=n_coeffs_to_plot_time_main)
-                analyzer.plot_cumulative_energy()
-                analyzer.plot_reconstruction_error()
-            else:
-                # Run full pipeline (default behavior when no arguments)
-                analyzer.perform_dmd()
-                analyzer.save_results()
                 analyzer.plot_eigenspectra()
                 analyzer.plot_modes_detailed(plot_n_modes=n_modes_to_plot_spatial_main)
                 analyzer.plot_time_coefficients(n_coeffs_to_plot=n_coeffs_to_plot_time_main)

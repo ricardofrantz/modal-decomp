@@ -763,7 +763,6 @@ if __name__ == "__main__":
         print(f"Available fields in {data_file}: {available_fields}")
         for field in available_fields:
             print(f"\n===== Running BSMD for variable: {field} =====")
-            data = loader.load(data_file, field=field)
             results_dir = os.path.join(RESULTS_DIR_BSMD, field)
             figures_dir = os.path.join(FIGURES_DIR_BSMD, field)
             os.makedirs(results_dir, exist_ok=True)
@@ -779,18 +778,32 @@ if __name__ == "__main__":
                 use_static_triads=True,
                 static_triads=ALL_TRIADS,
             )
-            analyzer.data = data
             analyzer.analysis_type = f"bsmd_{field}"
+
             run_all = not (args.prep or args.compute or args.plot)
             if run_all or args.prep:
+                data = loader.load(data_file, field=field)
+                analyzer.data = data
                 analyzer.load_and_preprocess()
                 analyzer.compute_fft_blocks()
             if run_all or args.compute:
-                if analyzer.qhat.size == 0:
+                if analyzer.data == {}:
                     analyzer.load_and_preprocess()
                     analyzer.compute_fft_blocks()
                 analyzer.perform_bsmd()
                 analyzer.save_results()
+                lambdas = np.abs(analyzer.eigenvalues)
+                plt.figure()
+                plt.plot(lambdas, "o-")
+                plt.xlabel("Triad index")
+                plt.ylabel("Eigenvalue magnitude")
+                plt.title("BSMD eigenvalue magnitudes")
+                plt.grid(True)
+                plt.tight_layout()
+                plt.savefig(os.path.join(figures_dir, f"{analyzer.data_root}_BSMD_eigenvalues.png"))
+                plt.close()
+                analyzer.plot_modes()
+                analyzer.plot_energy_map()
             if run_all or args.plot:
                 if analyzer.eigenvalues.size == 0:
                     print("No BSMD results to plot. Run with --compute first.")
