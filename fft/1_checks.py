@@ -132,6 +132,22 @@ def test_fft_inverse_consistency(x, N):
                     y_torch = torch.from_numpy(y)
                     y_torch_complex = y_torch.type(torch.complex64)
                     return torch.fft.ifft(y_torch_complex).numpy().real
+            elif backend == 'mkl':
+                from mkl_fft import ifft as ifft_func
+            elif backend == 'cupy':
+                import cupy as cp
+                def ifft_func(y):
+                    y_gpu = cp.asarray(y)
+                    return cp.asnumpy(cp.fft.ifft(y_gpu)).real
+            elif backend == 'torch_cuda':
+                import torch
+                def ifft_func(y):
+                    y_torch = torch.from_numpy(y).to('cuda')
+                    return torch.fft.ifft(y_torch).cpu().numpy().real
+            elif backend == 'accelerate':
+                # Accelerate doesn't have a simple ifft, skip
+                print(f"Backend: {backend:9s} | No IFFT implemented (macOS only)")
+                continue
             else:
                 print(f"Backend: {backend:9s} | No IFFT implemented")
                 continue

@@ -23,9 +23,22 @@ def blackman_tukey_rfft(x, fs):
     return freqs, psd
 
 
-def welch_method(x, fs):
-    """Compute PSD using Welch's method."""
-    freqs, psd = signal.welch(x, fs, nperseg=len(x), scaling='density')
+def welch_method(x, fs, nperseg=None):
+    """Compute PSD using Welch's method with segment averaging.
+
+    Args:
+        x: Input signal
+        fs: Sampling frequency
+        nperseg: Segment length for averaging. Default None uses scipy's default
+                 (256 or len(x) if shorter). Use larger values for finer
+                 frequency resolution, smaller for more averaging/smoother PSD.
+
+    Returns:
+        freqs: Frequency array
+        psd: Power spectral density estimate
+    """
+    # scipy default is 256, which gives good averaging for most signals
+    freqs, psd = signal.welch(x, fs, nperseg=nperseg, scaling='density')
     return freqs, psd
 
 

@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 from complex_signal import generate_complex_signal
-from .spectral_utils import (
+from spectral_utils import (
     periodogram_rfft,
     blackman_tukey_rfft,
     welch_method,
@@ -33,10 +33,12 @@ if __name__ == '__main__':
     
     results = {}
     
+    # Use nperseg=len(x) for Welch to match periodogram frequency resolution
+    # For true Welch averaging (smoother PSD), use nperseg=None or smaller value
     methods = [
         ("Periodogram", periodogram_rfft),
         ("Blackman-Tukey", blackman_tukey_rfft),
-        ("Welch", welch_method)
+        ("Welch", lambda x, fs: welch_method(x, fs, nperseg=len(x)))
     ]
     
     for method_name, method_func in methods:
@@ -136,7 +138,8 @@ if __name__ == '__main__':
     for method, data in results.items():
         error_percentage = data['error'] * 100  # Convert to percentage
         time_taken = data['time']
-        performance = 1 / error_percentage  # Inverse of error percentage as performance metric
+        # Inverse of error percentage as performance metric (avoid div by zero)
+        performance = 1 / max(error_percentage, 1e-6)
         method_performance[method] = {
             'error_percentage': error_percentage,
             'time': time_taken,
@@ -210,7 +213,7 @@ if __name__ == '__main__':
             methods = [
                 ("Periodogram", periodogram_rfft),
                 ("Blackman-Tukey", blackman_tukey_rfft),
-                ("Welch", welch_method),
+                ("Welch", lambda x, fs: welch_method(x, fs, nperseg=len(x))),
             ]
     
             for method_name, method_func in methods:

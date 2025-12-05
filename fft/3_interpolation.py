@@ -198,5 +198,17 @@ with open('3_interpolation.json', 'w') as f:
     json.dump(json_results, f, indent=2)
 
 # Print explicit Python function for the best method overall
-print("\nBest method overall (by majority vote or lowest average MSE):")
-print("interp1d(time_original, data_original, kind='zero')  # Zero-order (step) interpolation")
+print(f"\nBest method overall (by majority vote): {most_robust}")
+print("Usage example:")
+if most_robust == 'Zero':
+    print("  interp1d(time_original, data_original, kind='zero')")
+elif most_robust == 'Linear':
+    print("  interp1d(time_original, data_original, kind='linear')")
+elif most_robust == 'Cubic Spline':
+    print("  CubicSpline(time_original, data_original)")
+elif most_robust == 'Akima':
+    print("  Akima1DInterpolator(time_original, data_original, method='akima')")
+elif most_robust == 'Makima':
+    print("  Akima1DInterpolator(time_original, data_original, method='makima')")
+else:
+    print(f"  See scipy.interpolate documentation for '{most_robust}'")
