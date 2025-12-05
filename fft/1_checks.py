@@ -22,6 +22,8 @@ No normalization is applied in the forward FFT; if you want a unitary FFT, divid
 """
 
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 import sys
 import os
@@ -81,22 +83,61 @@ def test_fft_normalization(x, N, freq=FREQ, amplitude=AMPLITUDE, fs=FS):
             print(f"Backend: {backend:9s} | FFT peak: {amp_measured:.2f} | Theory: {amp_theory:.2f} | Ratio: {norm_ratio:.2f} | Normalized? {is_normalized}")
         except Exception as e:
             print(f"Backend: {backend:9s} | ERROR: {e}")
-    # Optional: plot
-    plt.figure(figsize=(8,4))
+    # Optional: plot - zoom around peak frequency to show backends overlap
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+    # Collect results for annotation
+    peak_amplitudes = {}
+
+    # Full spectrum (left)
+    ax1 = axes[0]
     for backend in get_fft_backend_names():
         try:
             fft_func = get_fft_func(backend)
             X = fft_func(x)
             freqs = np.fft.fftfreq(N, 1/fs)
-            plt.plot(freqs[:N//2], np.abs(X[:N//2]), label=backend)
+            amp = np.abs(X[:N//2])
+            ax1.plot(freqs[:N//2], amp, label=backend, alpha=0.8)
+            # Store peak amplitude
+            idx = np.argmin(np.abs(freqs[:N//2] - freq))
+            peak_amplitudes[backend] = amp[idx]
         except Exception:
             continue
-    plt.xlabel('Frequency [Hz]')
-    plt.ylabel('Amplitude')
-    plt.title('FFT Amplitude Spectrum by Backend in 1_checks.py')
-    plt.legend()
+    ax1.set_xlabel('Frequency [Hz]')
+    ax1.set_ylabel('Amplitude')
+    ax1.set_title('Full Spectrum')
+    ax1.legend()
+
+    # Zoomed view around peak (right) - show amplitudes match
+    ax2 = axes[1]
+    zoom_width = 5  # Hz around peak
+    colors = plt.cm.tab10.colors
+    for i, backend in enumerate(get_fft_backend_names()):
+        try:
+            fft_func = get_fft_func(backend)
+            X = fft_func(x)
+            freqs = np.fft.fftfreq(N, 1/fs)
+            amp = np.abs(X[:N//2])
+            ax2.plot(freqs[:N//2], amp, label=backend, alpha=0.8, linewidth=2, color=colors[i % len(colors)])
+            # Add marker at peak
+            idx = np.argmin(np.abs(freqs[:N//2] - freq))
+            ax2.scatter([freqs[idx]], [amp[idx]], s=50, color=colors[i % len(colors)], zorder=5)
+        except Exception:
+            continue
+    ax2.set_xlim(freq - zoom_width, freq + zoom_width)
+    ax2.set_xlabel('Frequency [Hz]')
+    ax2.set_ylabel('Amplitude')
+
+    # Add annotation showing all peaks match
+    if peak_amplitudes:
+        peaks_str = ', '.join([f'{b}: {v:.1f}' for b, v in peak_amplitudes.items()])
+        ax2.set_title(f'Zoomed: Peak amplitudes match\n({peaks_str})')
+    else:
+        ax2.set_title(f'Zoomed: {freq-zoom_width}–{freq+zoom_width} Hz')
+    ax2.legend()
+
     plt.tight_layout()
-    plt.savefig('1_checks_spectrum.png')
+    plt.savefig('1_checks_spectrum.png', dpi=150)
     plt.close()
     print(f"Saved spectrum plot as 1_checks_spectrum.png in {os.path.dirname(__file__)}")
 
