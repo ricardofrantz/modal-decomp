@@ -32,7 +32,7 @@ import os
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-from fft_backends import get_fft_func, get_fft_backend_names
+from fft_backends import get_fft_func, get_available_backends
 
 # ---- Configuration ----
 FS = 1024
@@ -65,9 +65,11 @@ def test_fft_normalization(x, N, freq=FREQ, amplitude=AMPLITUDE, fs=FS):
     - For a sine wave of amplitude A and length N, the FFT should have a peak of (A*N/2) at the sine frequency (for unnormalized FFTs).
     - This test confirms if the backend matches this convention, or applies a different normalization.
     """
-    print(f"\nTesting FFT normalization for a {freq} Hz sine wave, {N} samples, amplitude={amplitude}\n")
+    backends = get_available_backends()
+    print(f"\nAvailable backends: {backends}")
+    print(f"Testing FFT normalization for a {freq} Hz sine wave, {N} samples, amplitude={amplitude}\n")
     results = {}
-    for backend in get_fft_backend_names():
+    for backend in get_available_backends():
         try:
             fft_func = get_fft_func(backend)
             X = fft_func(x)
@@ -89,41 +91,41 @@ def test_fft_normalization(x, N, freq=FREQ, amplitude=AMPLITUDE, fs=FS):
     # Collect results for annotation
     peak_amplitudes = {}
 
-    # Full spectrum (left)
+    # Full spectrum (left) - thicker line first, thinner on top to show overlap
     ax1 = axes[0]
-    for backend in get_fft_backend_names():
-        try:
-            fft_func = get_fft_func(backend)
-            X = fft_func(x)
-            freqs = np.fft.fftfreq(N, 1/fs)
-            amp = np.abs(X[:N//2])
-            ax1.plot(freqs[:N//2], amp, label=backend, alpha=0.8)
-            # Store peak amplitude
-            idx = np.argmin(np.abs(freqs[:N//2] - freq))
-            peak_amplitudes[backend] = amp[idx]
-        except Exception:
-            continue
+    backends = get_available_backends()
+    colors = plt.cm.tab10.colors
+    n_backends = len(backends)
+    for i, backend in enumerate(backends):
+        fft_func = get_fft_func(backend)
+        X = fft_func(x)
+        freqs = np.fft.fftfreq(N, 1/fs)
+        amp = np.abs(X[:N//2])
+        # Decreasing linewidth: first is thickest, last is thinnest
+        lw = 4 - (i * 2.5 / max(n_backends - 1, 1))
+        ax1.plot(freqs[:N//2], amp, label=backend, alpha=0.9, linewidth=lw, color=colors[i % len(colors)])
+        # Store peak amplitude
+        idx = np.argmin(np.abs(freqs[:N//2] - freq))
+        peak_amplitudes[backend] = amp[idx]
     ax1.set_xlabel('Frequency [Hz]')
     ax1.set_ylabel('Amplitude')
-    ax1.set_title('Full Spectrum')
+    ax1.set_title('Full Spectrum (all backends overlap)')
     ax1.legend()
 
     # Zoomed view around peak (right) - show amplitudes match
     ax2 = axes[1]
     zoom_width = 5  # Hz around peak
-    colors = plt.cm.tab10.colors
-    for i, backend in enumerate(get_fft_backend_names()):
-        try:
-            fft_func = get_fft_func(backend)
-            X = fft_func(x)
-            freqs = np.fft.fftfreq(N, 1/fs)
-            amp = np.abs(X[:N//2])
-            ax2.plot(freqs[:N//2], amp, label=backend, alpha=0.8, linewidth=2, color=colors[i % len(colors)])
-            # Add marker at peak
-            idx = np.argmin(np.abs(freqs[:N//2] - freq))
-            ax2.scatter([freqs[idx]], [amp[idx]], s=50, color=colors[i % len(colors)], zorder=5)
-        except Exception:
-            continue
+    for i, backend in enumerate(backends):
+        fft_func = get_fft_func(backend)
+        X = fft_func(x)
+        freqs = np.fft.fftfreq(N, 1/fs)
+        amp = np.abs(X[:N//2])
+        # Decreasing linewidth: first is thickest, last is thinnest
+        lw = 4 - (i * 2.5 / max(n_backends - 1, 1))
+        ax2.plot(freqs[:N//2], amp, label=backend, alpha=0.9, linewidth=lw, color=colors[i % len(colors)])
+        # Add marker at peak
+        idx = np.argmin(np.abs(freqs[:N//2] - freq))
+        ax2.scatter([freqs[idx]], [amp[idx]], s=60 - i*10, color=colors[i % len(colors)], zorder=5)
     ax2.set_xlim(freq - zoom_width, freq + zoom_width)
     ax2.set_xlabel('Frequency [Hz]')
     ax2.set_ylabel('Amplitude')
@@ -150,7 +152,7 @@ def test_fft_inverse_consistency(x, N):
     - This checks both the correctness of the implementation and the normalization convention (e.g., unnormalized FFTs are usually paired with IFFTs that divide by N).
     """
     print("\nTesting inverse FFT consistency for each backend\n")
-    for backend in get_fft_backend_names():
+    for backend in get_available_backends():
         try:
             # Try to import the corresponding ifft
             if backend == 'scipy':
@@ -215,7 +217,7 @@ def test_fft_parseval(x, N):
     """
     print("\nTesting Parseval's theorem for each backend\n")
     E_time = np.sum(np.abs(x) ** 2)
-    for backend in get_fft_backend_names():
+    for backend in get_available_backends():
         try:
             fft_func = get_fft_func(backend)
             X = fft_func(x)
