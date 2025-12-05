@@ -101,9 +101,9 @@ def test_fft_normalization(x, N, freq=FREQ, amplitude=AMPLITUDE, fs=FS):
         X = fft_func(x)
         freqs = np.fft.fftfreq(N, 1/fs)
         amp = np.abs(X[:N//2])
-        # Decreasing linewidth: first is thickest, last is thinnest
-        lw = 4 - (i * 2.5 / max(n_backends - 1, 1))
-        ax1.plot(freqs[:N//2], amp, label=backend, alpha=0.9, linewidth=lw, color=colors[i % len(colors)])
+        # Decreasing linewidth: first (back) is thickest, last (front) is thinnest
+        lw = 6 - (i * 5 / max(n_backends - 1, 1))  # 6pt -> 1pt
+        ax1.plot(freqs[:N//2], amp, label=backend, linewidth=lw, color=colors[i % len(colors)])
         # Store peak amplitude
         idx = np.argmin(np.abs(freqs[:N//2] - freq))
         peak_amplitudes[backend] = amp[idx]
@@ -120,9 +120,9 @@ def test_fft_normalization(x, N, freq=FREQ, amplitude=AMPLITUDE, fs=FS):
         X = fft_func(x)
         freqs = np.fft.fftfreq(N, 1/fs)
         amp = np.abs(X[:N//2])
-        # Decreasing linewidth: first is thickest, last is thinnest
-        lw = 4 - (i * 2.5 / max(n_backends - 1, 1))
-        ax2.plot(freqs[:N//2], amp, label=backend, alpha=0.9, linewidth=lw, color=colors[i % len(colors)])
+        # Decreasing linewidth: first (back) is thickest, last (front) is thinnest
+        lw = 6 - (i * 5 / max(n_backends - 1, 1))  # 6pt -> 1pt
+        ax2.plot(freqs[:N//2], amp, label=backend, linewidth=lw, color=colors[i % len(colors)])
         # Add marker at peak
         idx = np.argmin(np.abs(freqs[:N//2] - freq))
         ax2.scatter([freqs[idx]], [amp[idx]], s=60 - i*10, color=colors[i % len(colors)], zorder=5)
