@@ -161,16 +161,20 @@ def compare_fft(size, N_times=3, discard=1):
     return result_dict
 
 # Test with different sizes for 1D signals, including non-powers of 2
-# Generate powers of two and nearby off values, up to 128k (131072)
-powers = list(range(10, 17))  # 2^10 (1024) to 2^17 (131072)
+# Generate powers of two and nearby off values, up to 256K (262144)
+powers = list(range(10, 19))  # 2^10 (1024) to 2^18 (262144)
 sizes_pow2 = [2 ** p for p in powers]
 sizes_off = []
 for n in sizes_pow2:
-    # Add both +1 and -1, +3 and -3 neighbors, but only if positive, not a power of two, and <= 131072
+    # Add both +1 and -1, +3 and -3 neighbors, but only if positive, not a power of two, and <= 262144
     for delta in [-3, -1, +1, +3]:
         off_val = n + delta
-        if 0 < off_val <= 131072 and (off_val & (off_val - 1)) != 0:
+        if 0 < off_val <= 262144 and (off_val & (off_val - 1)) != 0:
             sizes_off.append(off_val)
+
+# Add real-world sizes from JFM_CS project (80001 samples is typical)
+real_world_sizes = [80001, 100000, 150000, 200000]
+sizes_off.extend(real_world_sizes)
 
 # Combine, deduplicate, and sort
 sizes = sorted(set(sizes_pow2 + sizes_off))
@@ -328,12 +332,16 @@ def plot_fft_results(json_file='2_performance.json'):
             avg_timings[backend] = float('inf')
     fastest_backend = min(avg_timings, key=avg_timings.get)
     print("\n--- Linear Fit Results (log-log space) ---")
+    print("Power-of-2 sizes:")
     for backend in backend_names:
-        if backend in fit_results:
-            slope, intercept = fit_results[backend]
-            print(f"{backend}: slope={slope:.3f}, intercept={intercept:.3f}")
-        else:
-            print(f"{backend}: insufficient valid data for fit")
+        if backend in fit_results.get('pow2', {}):
+            slope, intercept = fit_results['pow2'][backend]
+            print(f"  {backend}: slope={slope:.3f}, intercept={intercept:.3f}")
+    print("Non-power-of-2 sizes:")
+    for backend in backend_names:
+        if backend in fit_results.get('non_pow2', {}):
+            slope, intercept = fit_results['non_pow2'][backend]
+            print(f"  {backend}: slope={slope:.3f}, intercept={intercept:.3f}")
     print(f"\nOverall fastest backend (lowest mean timing): {fastest_backend} (mean time: {avg_timings[fastest_backend]:.6g} s for 10 runs)")
 
     # Plot errors
@@ -388,7 +396,7 @@ def plot_fft_results(json_file='2_performance.json'):
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.savefig('2_performance_signal.png', dpi=DPI, bbox_inches='tight')
-    print("Plots saved as 2_performance_performance.png, 2_performance_accuracy.png, and 2_performance_signal.png")
+    print("Plots saved: 2_performance_pow2.png, 2_performance_non_pow2.png, 2_performance_accuracy.png, 2_performance_signal.png")
 
 
 # =============================================================================

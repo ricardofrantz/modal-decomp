@@ -2,6 +2,66 @@
 
 High-performance FFT utilities with multi-backend support for cross-platform use (Linux Intel/AMD, macOS Apple Silicon).
 
+## Benchmark Results Overview (Dec 2025)
+
+### Test System
+
+| Component | Specification |
+|-----------|---------------|
+| **CPU** | Intel Core i7-14700 (20 cores, 28 threads) |
+| **GPU** | NVIDIA GeForce RTX 4060 (8 GB VRAM) |
+| **RAM** | 64 GB |
+| **CUDA** | 12.0 |
+| **Driver** | 580.82.09 |
+| **Python** | 3.12.3 |
+| **OS** | Pop!_OS Linux (Ubuntu-based) |
+
+### Backends Tested
+
+7 backends: `scipy`, `numpy`, `mkl`, `cupy`, `torch`, `torch_cuda`, `tensorflow`
+
+### Key Finding: Power-of-2 vs Non-Power-of-2
+
+**Rankings differ significantly based on FFT size type:**
+
+| Scenario | Winner | Time @262K | Runner-up |
+|----------|--------|------------|-----------|
+| **Power-of-2** (e.g., 65536) | MKL | 0.46 ms | torch_cuda (2.3 ms) |
+| **Non-power-of-2** (e.g., 80001) | torch_cuda | 1.57 ms | cupy (1.80 ms) |
+
+### Non-Power-of-2 Slowdown Factor
+
+GPU backends are **immune** to the non-power-of-2 penalty:
+
+| Backend | Slowdown (non-pow2 vs pow2) |
+|---------|------------------------------|
+| cupy | 1.00x (no penalty) |
+| torch_cuda | 1.01x (no penalty) |
+| tensorflow | 1.07x (minimal) |
+| torch | 1.53x |
+| scipy | 2.87x |
+| numpy | 3.41x |
+| **MKL** | **12.73x** (severe) |
+
+### Recommendation
+
+| Data Type | Recommended Backend |
+|-----------|---------------------|
+| Power-of-2 sizes | **MKL** (5-20x faster than scipy) |
+| Non-power-of-2 sizes | **CuPy** or **torch_cuda** (GPU immune to penalty) |
+| Unknown/mixed sizes | **CuPy** (consistent performance) |
+| No GPU available | **scipy** (most robust) |
+
+### Performance at Real-World Sizes
+
+| Size | Best Backend | Time (ms) |
+|------|--------------|-----------|
+| 80,001 | torch_cuda | 2.16 |
+| 100,000 | torch_cuda | 2.06 |
+| 150,000 | cupy | 3.37 |
+| 200,000 | cupy | 4.52 |
+| 262,144 (pow2) | MKL | 1.58 |
+
 ## Quick Start
 
 ```python
