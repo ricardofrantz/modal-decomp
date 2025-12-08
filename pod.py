@@ -380,7 +380,7 @@ class PODAnalyzer(BaseAnalyzer):
         finally:
             plt.close(fig)  # Ensure figure is closed even if error occurs
 
-    def plot_modes(self, plot_n_modes: Optional[int] = 10, modes_per_fig: int = 1) -> None:
+    def plot_modes(self, plot_n_modes: Optional[int] = 10, modes_per_fig: int = 1, show_cylinder: bool = False) -> None:
         """Plot the spatial POD modes.
 
         Visualizes the first `n_modes_to_plot` dominant spatial modes.
@@ -391,6 +391,8 @@ class PODAnalyzer(BaseAnalyzer):
         Args:
             plot_n_modes (int | None, optional): Number of leading spatial modes to
                 plot. If ``None`` all available modes are plotted. Defaults to 10.
+            modes_per_fig (int): Number of modes per figure. Defaults to 1.
+            show_cylinder (bool): If True, add cylinder mask at origin with radius 0.5. Defaults to False.
         """
         if self.modes.size == 0:
             print("No modes to plot. Run perform_pod() first.")
@@ -410,10 +412,6 @@ class PODAnalyzer(BaseAnalyzer):
         y_coords = self.data.get("y", np.arange(Ny))
 
         fig_aspect = get_fig_aspect_ratio(self.data)
-
-        # Determine if plotting 1D or 2D modes
-        is_2d_plot = (self.modes.shape[0] == Nx * Ny) and (Nx > 1 and Ny > 1)
-
         var_name = self.data.get("metadata", {}).get("var_name", "q")
 
         for start in range(0, n_modes, modes_per_fig):
@@ -439,23 +437,32 @@ class PODAnalyzer(BaseAnalyzer):
                     x_mesh, y_mesh = np.meshgrid(x_coords, y_coords, indexing="ij")
                 else:
                     x_mesh, y_mesh = x_coords, y_coords
-                # Cylinder mask and plotting limits
-                distance = np.sqrt(x_mesh**2 + y_mesh**2)
-                cylinder_mask = distance <= 0.5
-                # Compute levels using only values outside the cylinder
-                mode_flat = mode_2d[~cylinder_mask]
+                # Optionally apply cylinder mask (always mask NaNs)
+                nan_mask = np.isnan(mode_2d)
+                if show_cylinder:
+                    distance = np.sqrt(x_mesh**2 + y_mesh**2)
+                    cylinder_mask = distance <= 0.5
+                    combined_mask = nan_mask | cylinder_mask
+                else:
+                    combined_mask = nan_mask
+                mode_plot = np.ma.array(mode_2d, mask=combined_mask)
+                mode_flat = mode_2d[~combined_mask]
+                # Guard against empty array (e.g., all points masked)
+                if mode_flat.size == 0:
+                    print(f"  Warning: Mode {mode_idx} has no valid data points, skipping plot.")
+                    continue
+                # Compute levels
                 vmin = np.nanmin(mode_flat)
                 vmax = np.nanmax(mode_flat)
                 levels = np.linspace(vmin, vmax, 21)
-                # Masked array for plotting
-                mode_plot = np.ma.array(mode_2d, mask=cylinder_mask)
                 # Plot filled contour
                 cf = ax.contourf(x_mesh, y_mesh, mode_plot, levels=levels, cmap=CMAP_SEQ, extend="both")
                 # Contour lines
                 cs = ax.contour(x_mesh, y_mesh, mode_plot, levels=levels[::4], colors="k", linewidths=0.5, alpha=0.5)
-                # Cylinder
-                cylinder = plt.Circle((0, 0), 0.5, fill=True, linewidth=0.5, zorder=3, facecolor="lightgray", edgecolor="black")
-                ax.add_patch(cylinder)
+                # Optionally add cylinder overlay
+                if show_cylinder:
+                    cylinder = plt.Circle((0, 0), 0.5, fill=True, linewidth=0.5, zorder=3, facecolor="lightgray", edgecolor="black")
+                    ax.add_patch(cylinder)
                 # Labels and aspect
                 ax.set_xlabel(r"$x/D$")
                 ax.set_ylabel(r"$y/D$")
@@ -483,7 +490,7 @@ class PODAnalyzer(BaseAnalyzer):
                 print(f"Saving figure {plot_filename}")
                 fig.tight_layout()
 
-    def plot_modes_pair_detailed(self, plot_n_modes: int = 4, cmap=CMAP_SEQ) -> None:
+    def plot_modes_pair_detailed(self, plot_n_modes: int = 4, cmap=CMAP_SEQ, show_cylinder: bool = False) -> None:
         """Plot modes in pairs with an additional magnitude row (2×2 per figure).
 
         Produces figures where the top row contains the raw spatial fields for a
@@ -534,9 +541,13 @@ class PODAnalyzer(BaseAnalyzer):
                     x_mesh, y_mesh = np.meshgrid(x_coords, y_coords, indexing="ij")
                 else:
                     x_mesh, y_mesh = x_coords, y_coords
-                dist = np.sqrt(x_mesh**2 + y_mesh**2)
-                mask = dist <= 0.5
-                field = np.ma.array(mode_2d, mask=mask)
+                # Optionally apply cylinder mask
+                if show_cylinder:
+                    dist = np.sqrt(x_mesh**2 + y_mesh**2)
+                    mask = dist <= 0.5
+                    field = np.ma.array(mode_2d, mask=mask)
+                else:
+                    field = mode_2d
                 vmax = np.max(np.abs(field))
                 levels = np.linspace(-vmax, vmax, 21)
 
@@ -550,7 +561,8 @@ class PODAnalyzer(BaseAnalyzer):
                 )
                 if first_cf is None:
                     first_cf = cf
-                ax.add_patch(plt.Circle((0, 0), 0.5, fill=True, facecolor="lightgray", edgecolor="black", linewidth=0.5))
+                if show_cylinder:
+                    ax.add_patch(plt.Circle((0, 0), 0.5, fill=True, facecolor="lightgray", edgecolor="black", linewidth=0.5))
                 ax.set_aspect("equal", "box")
                 ax.set_xlim(np.min(x_coords), np.max(x_coords))
                 ax.set_ylim(np.min(y_coords), np.max(y_coords))
@@ -582,7 +594,7 @@ class PODAnalyzer(BaseAnalyzer):
             plt.close(fig)
             print(f"Saving figure {plot_filename}")
 
-    def plot_modes_grid(self, energy_threshold: float = 99.5, cmap=CMAP_DIV) -> None:
+    def plot_modes_grid(self, energy_threshold: float = 99.5, cmap=CMAP_DIV, show_cylinder: bool = False) -> None:
         """Plot spatial POD modes side-by-side up to a cumulative energy threshold.
 
         This produces a single figure containing all modes required to reach the
@@ -646,10 +658,13 @@ class PODAnalyzer(BaseAnalyzer):
                 else:
                     x_mesh, y_mesh = x_coords, y_coords
 
-                # Mask interior of cylinder (radius 0.5)
-                distance = np.sqrt(x_mesh**2 + y_mesh**2)
-                cylinder_mask = distance <= 0.5
-                mode_plot = np.ma.array(mode_2d, mask=cylinder_mask)
+                # Optionally mask interior of cylinder (radius 0.5)
+                if show_cylinder:
+                    distance = np.sqrt(x_mesh**2 + y_mesh**2)
+                    cylinder_mask = distance <= 0.5
+                    mode_plot = np.ma.array(mode_2d, mask=cylinder_mask)
+                else:
+                    mode_plot = mode_2d
 
                 # Calculate contour levels with symmetric diverging scale
                 vmax = np.max(np.abs(mode_plot))
@@ -658,9 +673,10 @@ class PODAnalyzer(BaseAnalyzer):
                 # Plot contours
                 cf = ax.contourf(x_mesh, y_mesh, mode_plot, levels=levels, cmap=cmap, extend="both")
 
-                # Add cylinder overlay
-                cyl = plt.Circle((0, 0), 0.5, fill=True, facecolor="lightgray", edgecolor="black", linewidth=0.5)
-                ax.add_patch(cyl)
+                # Optionally add cylinder overlay
+                if show_cylinder:
+                    cyl = plt.Circle((0, 0), 0.5, fill=True, facecolor="lightgray", edgecolor="black", linewidth=0.5)
+                    ax.add_patch(cyl)
 
                 # Set axis properties
                 ax.set_aspect("equal", "box")

@@ -3,6 +3,7 @@ import argparse
 import os
 import time
 import warnings
+from typing import Optional
 
 import h5py
 import matplotlib.colors as colors
@@ -536,10 +537,20 @@ class SPODAnalyzer(BaseAnalyzer):
         plt.close(fig)
         print(f"SPOD eigenvalue plot (v2) saved to {plot_filename}")
 
-    from typing import Optional
+    def plot_modes(self, freqs_to_plot=None, plot_n_modes: Optional[int] = 10, modes_per_fig: int = 1, show_cylinder: bool = False) -> None:
+        """Plot spatial modes for selected frequencies as individual figures.
 
-    def plot_modes(self, freqs_to_plot=None, plot_n_modes: Optional[int] = 10, modes_per_fig: int = 1) -> None:
-        """Plot spatial modes for selected frequencies as individual figures."""
+        Parameters
+        ----------
+        freqs_to_plot : list, optional
+            List of frequencies to plot modes for
+        plot_n_modes : int, optional
+            Number of modes to plot per frequency (default 10)
+        modes_per_fig : int, optional
+            Number of modes per figure (default 1)
+        show_cylinder : bool, optional
+            If True, add cylinder mask at origin with radius 0.5 (default False)
+        """
 
         if self.modes.size == 0 or self.St.size == 0:
             print("No modes to plot. Run perform_spod() first.")
@@ -597,14 +608,19 @@ class SPODAnalyzer(BaseAnalyzer):
                             X, Y = np.meshgrid(x_coords, y_coords, indexing="ij")
                         else:
                             X, Y = x_coords, y_coords
-                        dist = np.sqrt(X**2 + Y**2)
-                        cyl_mask = dist <= 0.5
-                        mode_plot = np.ma.array(mode_2d, mask=np.isnan(mode_2d) | cyl_mask)
+                        # Optionally apply cylinder mask
+                        if show_cylinder:
+                            dist = np.sqrt(X**2 + Y**2)
+                            cyl_mask = dist <= 0.5
+                            mode_plot = np.ma.array(mode_2d, mask=np.isnan(mode_2d) | cyl_mask)
+                        else:
+                            mode_plot = np.ma.array(mode_2d, mask=np.isnan(mode_2d))
                         vmax = np.max(np.abs(mode_plot))
                         levels = np.linspace(-vmax, vmax, 21)
                         im = ax.contourf(X, Y, mode_plot, levels=levels, cmap=CMAP_DIV, extend="both")
                         ax.contour(X, Y, mode_plot, levels=levels[::4], colors="k", linewidths=0.5, alpha=0.5)
-                        ax.add_patch(plt.Circle((0, 0), 0.5, facecolor="lightgray", edgecolor="black", linewidth=0.5))
+                        if show_cylinder:
+                            ax.add_patch(plt.Circle((0, 0), 0.5, facecolor="lightgray", edgecolor="black", linewidth=0.5))
                         ax.set_aspect("equal", "box")
                         ax.set_xlim(np.min(x_coords), np.max(x_coords))
                         ax.set_ylim(np.min(y_coords), np.max(y_coords))

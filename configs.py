@@ -49,7 +49,26 @@ FIG_FORMAT = "png"  # or "pdf"
 #  - 'accelerate' for macOS vDSP/Accelerate
 #  - 'cv2' (OpenCV)
 # The name must match the keys defined in :mod:`fft.fft_backends`.
-FFT_BACKEND = "scipy"
+#
+# Auto-detection priority: PYMODAL_FFT_BACKEND env var > MKL > scipy
+def _detect_fft_backend():
+    """Auto-detect best available FFT backend."""
+    # 1. Check environment variable override
+    env_backend = os.environ.get("PYMODAL_FFT_BACKEND")
+    if env_backend:
+        return env_backend.lower()
+
+    # 2. Try MKL (2-10x faster than scipy on Intel CPUs)
+    try:
+        import mkl_fft
+        return "mkl"
+    except ImportError:
+        pass
+
+    # 3. Default to scipy (always available)
+    return "scipy"
+
+FFT_BACKEND = _detect_fft_backend()
 
 # Matplotlib/LaTeX options
 USE_LATEX = False  # Set True to enable LaTeX rendering

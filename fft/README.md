@@ -150,9 +150,44 @@ Best method varies by noise level - no single winner:
 
 ## Installation
 
-### Core (always works)
+### System Dependencies (Ubuntu/Debian/Pop!_OS)
+
 ```bash
-uv pip install scipy numpy
+# Required: Python 3.12+, HDF5, OpenBLAS
+sudo apt install python3 python3-dev python3-venv \
+    libhdf5-dev libopenblas-dev pkg-config
+
+# Optional: NVIDIA GPU (driver only - CUDA comes via pip)
+sudo apt install nvidia-driver-560  # or latest from Pop/Ubuntu repos
+```
+
+> **Note**: For best GPU performance, use the pip-installed CUDA runtime (`cupy-cuda12x` or `cupy-cuda13x`) rather than `nvidia-cuda-toolkit`. The pip wheels bundle the exact CUDA libraries needed.
+
+### Python Environment Setup
+
+```bash
+# Create and activate virtual environment
+uv venv ~/.venv
+source ~/.venv/bin/activate
+```
+
+### Core Requirements (always needed)
+
+```bash
+uv pip install numpy scipy matplotlib h5py tabulate tqdm threadpoolctl
+```
+
+### All-in-One Install (copy-paste ready)
+
+```bash
+# System deps
+sudo apt install -y python3 python3-dev python3-venv libhdf5-dev libopenblas-dev pkg-config
+
+# Python packages (core)
+uv pip install numpy scipy matplotlib h5py tabulate tqdm threadpoolctl
+
+# Verify
+python -c "import numpy, scipy, matplotlib, h5py, tabulate, tqdm; print('Core OK')"
 ```
 
 ### Intel MKL (Linux/macOS Intel - Recommended for CPU)
@@ -161,8 +196,8 @@ uv pip install scipy numpy
 # Load Intel oneAPI environment (if available)
 source /opt/intel/oneapi/setvars.sh  # or alias like 'int25'
 
-# Install via uv
-uv pip install mkl_fft mkl-service \
+# Install MKL FFT
+uv pip install mkl-fft mkl-service \
     --index-url https://software.repos.intel.com/python/pypi \
     --extra-index-url https://pypi.org/simple
 
@@ -173,21 +208,48 @@ python -c "import mkl_fft; print('MKL FFT OK')"
 ### NVIDIA GPU (Linux only)
 
 ```bash
-# Prerequisites: NVIDIA driver + CUDA toolkit
-nvidia-smi                           # Check driver
-sudo apt install nvidia-cuda-toolkit  # Ubuntu/Debian
-nvcc --version                       # Verify CUDA
+# Check your driver's CUDA version
+nvidia-smi | grep "CUDA Version"
 
-# Install CuPy for CUDA 12.x
-uv pip install cupy-cuda12x
+# Install CuPy matching your driver's CUDA version:
+uv pip install cupy-cuda12x   # For CUDA 12.x drivers (most common)
+# OR
+uv pip install cupy-cuda13x   # For CUDA 13.x drivers (newest)
 
 # Verify
-python -c "import cupy as cp; print(f'GPU OK: {cp.cuda.Device(0).compute_capability}')"
+python -c "import cupy as cp; print(f'GPU: {cp.cuda.runtime.getDeviceProperties(0)[\"name\"].decode()}')"
+python -c "import cupy as cp; a = cp.random.rand(10000); print(f'cuFFT OK: {cp.fft.fft(a).shape}')"
 ```
+
+> **Tip**: CuPy wheels bundle their own CUDA runtime - no need for `nvidia-cuda-toolkit` apt package. Just match `cupy-cuda##x` to your driver's CUDA version from `nvidia-smi`.
 
 ### macOS Apple Silicon
 
 The `accelerate` backend uses Apple's vDSP framework automatically. No extra installation needed, but it only supports power-of-2 FFT sizes.
+
+### Summary Table
+
+| Package | Purpose | Install Command |
+|---------|---------|-----------------|
+| numpy | Array operations (2.x required) | `uv pip install numpy` |
+| scipy | FFT baseline, signal processing | `uv pip install scipy` |
+| matplotlib | Plotting | `uv pip install matplotlib` |
+| h5py | HDF5 file I/O | `uv pip install h5py` |
+| tabulate | Pretty tables | `uv pip install tabulate` |
+| tqdm | Progress bars | `uv pip install tqdm` |
+| threadpoolctl | Thread control | `uv pip install threadpoolctl` |
+| mkl-fft | Intel MKL FFT (2-10x faster) | `uv pip install mkl-fft` |
+| cupy-cuda12x | NVIDIA GPU (CUDA 12.x) | `uv pip install cupy-cuda12x` |
+| cupy-cuda13x | NVIDIA GPU (CUDA 13.x) | `uv pip install cupy-cuda13x` |
+
+### Recommended Versions (Dec 2025)
+
+| Package | Min Version | Notes |
+|---------|-------------|-------|
+| Python | 3.12+ | 3.13 recommended |
+| numpy | 2.0+ | Required for latest scipy |
+| scipy | 1.14+ | Improved FFT performance |
+| CuPy | 13.6+ | CUDA 13 + NumPy 2.3 support |
 
 ## Usage Examples
 
@@ -245,6 +307,8 @@ print(f"Detected peaks at: {peak_freqs} Hz")
 
 ## Running Tests
 
+### FFT Module Tests (in `fft/` folder)
+
 ```bash
 cd fft/
 
@@ -261,18 +325,42 @@ python 3_interpolation.py
 python 4_methods.py
 ```
 
+### Full pyModal Test Suite (from project root)
+
+```bash
+# Run comprehensive validation of POD, DMD, SPOD (22 tests)
+python test_all.py
+
+# This verifies:
+# - FFT backend is correctly auto-detected
+# - POD rank recovery, eigenvalues, orthonormality
+# - DMD eigenvalue/frequency recovery
+# - SPOD spectral analysis and tonal detection
+# - Cross-method consistency
+# - Heavy DOF tests (cylinder wake, Ginzburg-Landau, jet-like)
+```
+
+> **Tip**: Run `test_all.py` after installing new backends to verify they work correctly with the full analysis pipeline.
+
 ## Dependencies
 
-Required:
-- `numpy`
-- `scipy`
-- `matplotlib`
-- `tabulate`
+**System (apt)**:
+```bash
+sudo apt install python3 python3-dev python3-venv libhdf5-dev libopenblas-dev pkg-config
+```
 
-Optional (for high performance):
-- `mkl_fft` - Intel MKL FFT (Linux/macOS Intel)
-- `cupy-cuda12x` - NVIDIA GPU FFT (Linux only)
-- `torch` - PyTorch FFT (if using ML pipelines)
+**Required Python**:
+```bash
+uv pip install numpy scipy matplotlib h5py tabulate tqdm threadpoolctl
+```
+
+**Optional (high performance)**:
+```bash
+uv pip install mkl-fft mkl-service   # Intel MKL (2-10x faster on Intel CPUs)
+uv pip install cupy-cuda12x          # NVIDIA GPU (CUDA 12.x)
+uv pip install cupy-cuda13x          # NVIDIA GPU (CUDA 13.x - newest)
+uv pip install torch                 # PyTorch FFT (ML pipelines)
+```
 
 ## API Reference
 
@@ -302,11 +390,26 @@ Optional (for high performance):
 | `blackman_tukey_rfft(x, fs)` | Blackman-Tukey (lowest error) |
 | `find_peaks(freqs, psd)` | Peak detection |
 
+## Automatic Backend Selection
+
+pyModal **automatically detects** the best FFT backend at import time:
+
+1. **Environment override**: `PYMODAL_FFT_BACKEND` env var (if set)
+2. **MKL** (if available) - 2-10x faster than scipy on Intel CPUs
+3. **scipy** (fallback) - always available
+
+```python
+# Check which backend is active
+from configs import FFT_BACKEND
+print(f"Using FFT backend: {FFT_BACKEND}")  # e.g., "mkl" or "scipy"
+```
+
 ## Environment Variables
 
 ```bash
-# Override default FFT backend
-export PYMODAL_FFT_BACKEND=mkl
+# Override auto-detected FFT backend
+export PYMODAL_FFT_BACKEND=mkl   # Force MKL
+export PYMODAL_FFT_BACKEND=cupy  # Force CuPy (GPU)
 
 # Control MKL thread count
 export MKL_NUM_THREADS=4
@@ -323,9 +426,15 @@ python -c "import mkl_fft; print('OK')"
 
 ### CuPy import fails
 ```bash
-nvcc --version              # Check CUDA toolkit
-ldconfig -p | grep cufft    # Check libcufft
-sudo apt install nvidia-cuda-toolkit  # If missing
+# Check driver is working
+nvidia-smi                  # Should show GPU and CUDA version
+
+# Check you installed the right CuPy version
+nvidia-smi | grep "CUDA Version"  # e.g., "CUDA Version: 13.0"
+# Install matching version: cupy-cuda12x for 12.x, cupy-cuda13x for 13.x
+
+# If still failing, try reinstalling
+uv pip uninstall cupy-cuda12x && uv pip install cupy-cuda12x
 ```
 
 ### Accelerate fails on macOS

@@ -285,8 +285,17 @@ class DMDAnalyzer(BaseAnalyzer):
         zero_phase_ref: bool = False,
         unwrap_phase: bool = False,
         ref_method: str = "max",
+        show_cylinder: bool = False,
     ):
-        """Plot real, imaginary, magnitude, and phase of several modes in a 4-row grid."""
+        """Plot real, imaginary, magnitude, and phase of several modes in a 4-row grid.
+
+        Args:
+            plot_n_modes: Number of modes to plot
+            zero_phase_ref: If True, reference phase to 0
+            unwrap_phase: If True, unwrap phase
+            ref_method: Method for phase reference ('max' or 'mean')
+            show_cylinder: If True, add cylinder mask at origin with radius 0.5
+        """
         if self.modes.size == 0:
             print("No modes to plot. Run perform_dmd() first.")
             return
@@ -318,8 +327,12 @@ class DMDAnalyzer(BaseAnalyzer):
             x_mesh, y_mesh = np.meshgrid(x_coords, y_coords, indexing="ij")
         else:
             x_mesh, y_mesh = x_coords, y_coords
-        distance = np.sqrt(x_mesh**2 + y_mesh**2)
-        cylinder_mask = distance <= 0.5
+        # Optionally create cylinder mask
+        if show_cylinder:
+            distance = np.sqrt(x_mesh**2 + y_mesh**2)
+            cylinder_mask = distance <= 0.5
+        else:
+            cylinder_mask = None
 
         for m in range(n_modes):
             vec = self.modes[:, m]
@@ -337,7 +350,10 @@ class DMDAnalyzer(BaseAnalyzer):
             for r, comp in enumerate(comps):
                 ax = axes[r, m]
                 comp2d = comp.reshape((nx, ny))
-                comp_plot = np.ma.array(comp2d, mask=cylinder_mask)
+                if cylinder_mask is not None:
+                    comp_plot = np.ma.array(comp2d, mask=cylinder_mask)
+                else:
+                    comp_plot = comp2d
                 if r == 2:
                     vmin, vmax = 0.0, np.nanmax(comp_plot)
                 elif r == 3:
@@ -377,9 +393,10 @@ class DMDAnalyzer(BaseAnalyzer):
                 cax.patch.set_facecolor("black")
                 cax.patch.set_alpha(0.7)
 
-                # Cylinder overlay (always)
-                cylinder = plt.Circle((0, 0), 0.5, facecolor="lightgray", edgecolor="black", linewidth=0.5)
-                ax.add_patch(cylinder)
+                # Optionally add cylinder overlay
+                if show_cylinder:
+                    cylinder = plt.Circle((0, 0), 0.5, facecolor="lightgray", edgecolor="black", linewidth=0.5)
+                    ax.add_patch(cylinder)
                 # Phase zero-line overlay
                 if r == 3 and vmax - vmin > 1e-12:
                     ax.contour(x_mesh, y_mesh, comp_plot, levels=[0.0], colors="white", linewidths=0.6)
@@ -424,8 +441,14 @@ class DMDAnalyzer(BaseAnalyzer):
         plt.close()
         print(f"Saving figure {fname}")
 
-    def plot_modes(self, plot_n_modes: Optional[int] = 10, modes_per_fig: int = 1):
-        """Plot the spatial DMD modes (1D/2D, like POD)."""
+    def plot_modes(self, plot_n_modes: Optional[int] = 10, modes_per_fig: int = 1, show_cylinder: bool = False):
+        """Plot the spatial DMD modes (1D/2D, like POD).
+
+        Args:
+            plot_n_modes: Number of modes to plot
+            modes_per_fig: Number of modes per figure
+            show_cylinder: If True, add cylinder mask at origin with radius 0.5
+        """
         if self.modes.size == 0:
             print("No modes to plot. Run perform_dmd() first.")
             return
@@ -437,15 +460,9 @@ class DMDAnalyzer(BaseAnalyzer):
             return
         Nx = self.data.get("Nx", int(np.sqrt(self.modes.shape[0])))
         Ny = self.data.get("Ny", int(np.sqrt(self.modes.shape[0])))
-        is_2d_plot = (self.modes.shape[0] == Nx * Ny) and (Nx > 1 and Ny > 1)
+        is_2d = (self.modes.shape[0] == Nx * Ny) and (Nx > 1 and Ny > 1)
         x_coords = self.data.get("x", np.arange(Nx))
         y_coords = self.data.get("y", np.arange(Ny))
-
-        nx = self.data.get("Nx", int(np.sqrt(self.modes.shape[0])))
-        ny = self.data.get("Ny", int(np.sqrt(self.modes.shape[0])))
-        x_coords = self.data.get("x", np.arange(nx))
-        y_coords = self.data.get("y", np.arange(ny))
-        is_2d = self.modes.shape[0] == nx * ny and nx > 1 and ny > 1
         fig_aspect = get_fig_aspect_ratio(self.data)
         var_name = self.data.get("metadata", {}).get("var_name", "q")
         # Compute mode frequencies (Hz) for annotation purposes
@@ -471,29 +488,38 @@ class DMDAnalyzer(BaseAnalyzer):
                 mode = self.modes[:, i].real
                 if is_2d:
                     # Reshape mode to 2D
-                    mode_2d = mode.reshape((nx, ny))
+                    mode_2d = mode.reshape((Nx, Ny))
                     # Get meshgrid for plotting
                     if x_coords.ndim == 1 and y_coords.ndim == 1:
                         x_mesh, y_mesh = np.meshgrid(x_coords, y_coords, indexing="ij")
                     else:
                         x_mesh, y_mesh = x_coords, y_coords
-                    # Cylinder mask and plotting limits
-                    distance = np.sqrt(x_mesh**2 + y_mesh**2)
-                    cylinder_mask = distance <= 0.5
-                    # Compute levels using only values outside the cylinder
-                    mode_flat = mode_2d[~cylinder_mask]
+                    # Optionally apply cylinder mask (always mask NaNs)
+                    nan_mask = np.isnan(mode_2d)
+                    if show_cylinder:
+                        distance = np.sqrt(x_mesh**2 + y_mesh**2)
+                        cylinder_mask = distance <= 0.5
+                        combined_mask = nan_mask | cylinder_mask
+                    else:
+                        combined_mask = nan_mask
+                    mode_plot = np.ma.array(mode_2d, mask=combined_mask)
+                    mode_flat = mode_2d[~combined_mask]
+                    # Guard against empty array (e.g., all points masked)
+                    if mode_flat.size == 0:
+                        print(f"  Warning: Mode {i} has no valid data points, skipping plot.")
+                        continue
+                    # Compute levels
                     vmin = np.nanmin(mode_flat)
                     vmax = np.nanmax(mode_flat)
                     levels = np.linspace(vmin, vmax, 21)
-                    # Masked array for plotting
-                    mode_plot = np.ma.array(mode_2d, mask=cylinder_mask)
                     # Plot filled contour
                     cf = ax.contourf(x_mesh, y_mesh, mode_plot, levels=levels, cmap=CMAP_DIV, extend="both")
                     # Contour lines
                     cs = ax.contour(x_mesh, y_mesh, mode_plot, levels=levels[::4], colors="k", linewidths=0.5, alpha=0.5)
-                    # Cylinder
-                    cylinder = plt.Circle((0, 0), 0.5, fill=True, linewidth=0.5, zorder=3, facecolor="lightgray", edgecolor="black")
-                    ax.add_patch(cylinder)
+                    # Optionally add cylinder overlay
+                    if show_cylinder:
+                        cylinder = plt.Circle((0, 0), 0.5, fill=True, linewidth=0.5, zorder=3, facecolor="lightgray", edgecolor="black")
+                        ax.add_patch(cylinder)
                     # Labels and aspect
                     ax.set_xlabel(r"$x/D$")
                     ax.set_ylabel(r"$y/D$")
