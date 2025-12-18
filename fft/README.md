@@ -163,6 +163,16 @@ sudo apt install nvidia-driver-560  # or latest from Pop/Ubuntu repos
 
 > **Note**: For best GPU performance, use the pip-installed CUDA runtime (`cupy-cuda12x` or `cupy-cuda13x`) rather than `nvidia-cuda-toolkit`. The pip wheels bundle the exact CUDA libraries needed.
 
+### Quick Start (Pop!_OS with Intel oneAPI)
+
+If you already have the environment set up, just run:
+
+```bash
+int25
+```
+
+This loads Intel oneAPI 2025 + the uv venv with all backends (cupy, mkl, torch, tensorflow).
+
 ### Python Environment Setup
 
 ```bash
@@ -420,6 +430,10 @@ export OMP_NUM_THREADS=4
 
 ### MKL not found (Linux)
 ```bash
+# Quick: use int25 alias (Pop!_OS)
+int25
+
+# Manual: source Intel oneAPI
 source /opt/intel/oneapi/setvars.sh
 python -c "import mkl_fft; print('OK')"
 ```
