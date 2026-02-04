@@ -1,173 +1,288 @@
+```
+██████╗ ██╗   ██╗███╗   ███╗ ██████╗ ██████╗  █████╗ ██╗
+██╔══██╗╚██╗ ██╔╝████╗ ████║██╔═══██╗██╔══██╗██╔══██╗██║
+██████╔╝ ╚████╔╝ ██╔████╔██║██║   ██║██║  ██║███████║██║
+██╔═══╝   ╚██╔╝  ██║╚██╔╝██║██║   ██║██║  ██║██╔══██║██║
+██║        ██║   ██║ ╚═╝ ██║╚██████╔╝██████╔╝██║  ██║███████╗
+╚═╝        ╚═╝   ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝
+```
+
+[![CI](https://github.com/ricardofrantz/pyModal/actions/workflows/ci.yml/badge.svg)](https://github.com/ricardofrantz/pyModal/actions/workflows/ci.yml)
+
 # pyModal — modal decompositions in pure Python
 
-pyModal is a collection of zero-MPI, minimal-dependency scripts for uncovering coherent structures in complex data.  It currently implements Proper Orthogonal Decomposition (POD), Spectral POD (SPOD), and the recently introduced Bispectral Mode Decomposition (BSMD), with full Space-Time POD (ST-POD) support on the roadmap.
-The focus is on clarity over boilerplate: every algorithm fits in a few hundred readable lines so you can study, tweak, or extend the maths without fighting a framework.
+A lightweight, zero-MPI toolkit for extracting coherent structures from spatiotemporal data. Every algorithm fits in a few hundred readable lines—study, tweak, or extend the maths without fighting a framework.
 
-- Why another modal toolbox?
-pyModal is the only open-source package to combine POD + SPOD and BSMD in a single, laptop-friendly codebase—something you won’t find in established libraries like PySPOD (SPOD only)  ￼, PyDMD (DMD variants), or modred (POD/BPOD/DMD).
+**Methods implemented:** POD, DMD, SPOD, BSMD (with ST-POD planned)
 
-- **Proper Orthogonal Decomposition (POD)**
-  Performs a weighted singular value decomposition of mean-subtracted snapshots
-  to recover energy-ranked spatial modes and their temporal coefficients.
-  Periodograms of the time coefficients are plotted in Hertz using the
-  sampling interval `dt`. Multiply the frequency axis by `L/U` to express
-  results in the dimensionless Strouhal number when physical scales are known.
-
-- **Spectral Proper Orthogonal Decomposition (SPOD)**
-  Solves the cross-spectral density eigenvalue problem to yield energy-ranked,
-  harmonic spatial modes under the assumption of wide-sense stationarity.
-  _Reference:_ [Towne, Schmidt & Colonius (2018)](https://arxiv.org/abs/1708.04393)
-
-- **Bispectral Mode Decomposition (BSMD)**
-  Extracts third-order phase-coupled spatial modes by diagonalizing an estimated
-  bispectral density tensor, revealing the triadic interactions that drive
-  nonlinear energy transfer.
-  _Reference:_ [Nekkanti, Pickering, Schmidt & Colonius (2025)](https://arxiv.org/abs/2502.15091)
-  If FFT blocks are already present in `results_spod/`, BSMD automatically reuses
-  them (printing "Reusing cached FFT blocks...") and writes new output to
-  `results_bsmd/`.
-- **Dynamic Mode Decomposition (DMD)**
-  Recovers eigenvalues and spatial modes of the best-fit linear operator
-  advancing the system in time.  Useful for extracting growth rates and
-  oscillatory structures.  The implementation here mirrors the exact DMD
-  algorithm from the `PyDMD` project.
-
-- **Space-Time Proper Orthogonal Decomposition (ST-POD)**
-  Generalizes POD to a full space–time framework by solving an eigenproblem of
-  the space-time correlation tensor, capturing arbitrary nonstationary and
-  transient dynamics over finite windows.
-  Support for ST-POD is planned but **not yet implemented**.
-  _Reference:_ [Yeung & Schmidt (2025)](https://arxiv.org/abs/2502.09746)
-
----
-
-## 🔑 Key Features
-
-- **Pure-Python & portable** – runs out-of-the-box on CPython ≥3.9; no MPI or GPU prerequisites.
-- **Unified CLI workflow** – --prep, --compute, --plot stages for each method; caches FFT blocks automatically.
-- **Minimal install footprint** – only numpy, scipy, matplotlib, h5py, tqdm.
-- **Flexible I/O** – HDF5, NetCDF, MATLAB .mat, raw NumPy arrays.
-- **Built-in visualisation** - Quick mode shapes, spectra, and bispectral-energy maps straight from the CLI.
-
----
-
-## 💾 Getting the Code
+## Quick Start
 
 ```bash
 git clone https://github.com/ricardofrantz/pyModal.git
 cd pyModal
+pip install numpy scipy matplotlib h5py tqdm
+
+# Run the 2D benchmark examples
+python examples_2d.py
 ```
+
+This generates synthetic flow fields (Double Gyre, Taylor-Green Vortex, Cylinder Wake) and runs POD, DMD, and SPOD on each—figures saved to `./figs_examples/`.
+
+---
+
+## Usage
+
+### Python API
+
+```python
+from pod import PODAnalyzer
+from spod import SPODAnalyzer
+from dmd import DMDAnalyzer
+from examples_2d import cylinder_wake, make_loader
+
+# Generate synthetic data (or load your own)
+data = cylinder_wake(Nx=100, Ny=50, Nt=500, Re=100)
+loader = make_loader(data)
+
+# --- POD ---
+pod = PODAnalyzer(
+    file_path="cylinder",
+    data_loader=loader,
+    n_modes_save=10,
+)
+pod.run_analysis()
+print(f"POD modes: {pod.modes.shape}")           # (Nspace, n_modes)
+print(f"Eigenvalues: {pod.eigenvalues[:3]}")     # Energy per mode
+
+# --- DMD ---
+dmd = DMDAnalyzer(
+    file_path="cylinder",
+    data_loader=loader,
+    n_modes_save=10,
+)
+dmd.load_and_preprocess()
+dmd.perform_dmd()
+print(f"DMD eigenvalues: {dmd.eigenvalues[:3]}")  # Complex, |λ|<1 = decay
+
+# --- SPOD ---
+spod = SPODAnalyzer(
+    file_path="cylinder",
+    data_loader=loader,
+    nfft=128,
+    overlap=0.5,
+)
+spod.run()
+spod.perform_spod()
+print(f"SPOD frequencies: {spod.freq[:5]} Hz")
+```
+
+### Loading Your Own Data
+
+pyModal auto-detects `.mat`, `.h5`, and `.npz` files. Your data should have:
+
+```python
+# Required structure
+{
+    'q': np.ndarray,  # shape (Ns, Nspace) — snapshots × flattened spatial points
+    'dt': float,      # time step between snapshots
+    'Nx': int,        # grid points in x
+    'Ny': int,        # grid points in y
+    'x': np.ndarray,  # x-coordinates (optional)
+    'y': np.ndarray,  # y-coordinates (optional)
+}
+```
+
+Example with a `.mat` file:
+
+```python
+from pod import PODAnalyzer
+
+pod = PODAnalyzer(file_path="./data/my_simulation.mat", n_modes_save=20)
+pod.run_analysis()
+```
+
+### Command Line
+
+Each script supports staged execution:
+
+```bash
+# Full analysis (prep → compute → plot)
+python pod.py --data ./data/my_file.mat
+
+# Staged execution
+python spod.py --prep      # preprocess only
+python spod.py --compute   # compute decomposition
+python spod.py --plot      # generate figures
+
+# Run all methods sequentially
+python pyModal.py --data ./data/my_file.mat
+
+# Run specific method
+python pyModal.py --spod --data ./data/my_file.mat
+```
+
+---
+
+## Methods
+
+| Method | Use Case | Key Output |
+|--------|----------|------------|
+| **POD** | Energy-ranked spatial modes | `modes`, `eigenvalues`, `time_coefficients` |
+| **DMD** | Growth rates, oscillatory structures | `modes`, `eigenvalues` (complex), `frequencies` |
+| **SPOD** | Frequency-resolved coherent structures | `modes[freq]`, `eigenvalues[freq]` |
+| **BSMD** | Triadic interactions, nonlinear coupling | Bispectral modes at frequency triads |
+
+### POD — Proper Orthogonal Decomposition
+
+Energy-optimal spatial modes via SVD of mean-subtracted snapshots.
+
+```python
+pod = PODAnalyzer(file_path="data.mat", n_modes_save=10)
+pod.run_analysis()
+
+# Results
+pod.modes            # (Nspace, n_modes) — spatial modes
+pod.eigenvalues      # (n_modes,) — energy per mode
+pod.time_coefficients  # (Ns, n_modes) — temporal evolution
+```
+
+### DMD — Dynamic Mode Decomposition
+
+Extracts eigenvalues/modes of the best-fit linear operator.
+
+```python
+dmd = DMDAnalyzer(file_path="data.mat", n_modes_save=10)
+dmd.load_and_preprocess()
+dmd.perform_dmd()
+
+# Eigenvalues on complex plane: |λ| < 1 = decaying, |λ| > 1 = growing
+frequencies = np.angle(dmd.eigenvalues) / (2 * np.pi * dmd.dt)
+```
+
+### SPOD — Spectral POD
+
+Frequency-resolved modes under stationary assumptions. [Towne, Schmidt & Colonius (2018)](https://arxiv.org/abs/1708.04393)
+
+```python
+spod = SPODAnalyzer(file_path="data.mat", nfft=256, overlap=0.5)
+spod.run()
+spod.perform_spod()
+
+# Modes at each frequency
+spod.freq              # frequency bins (Hz)
+spod.eigenvalues[f]    # energy at frequency index f
+spod.modes[f]          # spatial modes at frequency f
+```
+
+### BSMD — Bispectral Mode Decomposition
+
+Third-order interactions revealing nonlinear energy transfer. [Nekkanti et al. (2025)](https://arxiv.org/abs/2502.15091)
+
+```bash
+# BSMD reuses cached FFT blocks from SPOD
+python spod.py --data ./data/my_file.mat   # creates results_spod/
+python bmsd.py --data ./data/my_file.mat   # reuses cache, outputs to results_bsmd/
+```
+
+---
+
+## Configuration
+
+Edit `configs.py` or pass a JSON/YAML file:
+
+```python
+from configs import load_config
+load_config("my_settings.yaml")
+```
+
+Key settings:
+
+```python
+FFT_BACKEND = "scipy"   # or "mkl", "numpy", "accelerate" (macOS)
+FIG_DPI = 500
+WINDOW_TYPE = "hamming"
+```
+
+Override FFT backend via environment variable:
+
+```bash
+PYMODAL_FFT_BACKEND=mkl python spod.py
+```
+
+---
 
 ## Installation
 
-Install the required Python packages with:
-
 ```bash
-pip install h5py matplotlib numpy scipy tqdm
+pip install numpy scipy matplotlib h5py tqdm
 ```
 
-These scripts were tested on **Python 3.13** running on **Ubuntu 24.04** and **macOS**.
-
-### Performance notes
-
-On Apple silicon (M‑series) Macs we recommend installing Python via
-[Miniforge](https://github.com/conda-forge/miniforge) and using the packages
-provided by conda-forge:
+**Performance tips:**
 
 ```bash
-conda install numpy scipy matplotlib
-```
+# Intel MKL (2-10x faster FFTs on Intel CPUs)
+conda install mkl_fft
 
-To enable the optional `'accelerate'` FFT backend install the PyObjC bindings:
-
-```bash
+# Apple Silicon
 pip install pyobjc-framework-Accelerate
 ```
 
-For Intel workstations with the Intel compiler stack you can take advantage of
-Intel's optimized libraries:
-
-```bash
-conda install intel-openmp
-conda install numpy[mkl]
-conda install mkl_fft  # optional direct MKL backend
-```
-
-## Running Tests
-
-Install the dependencies and run the unit tests with:
-
-```bash
-pytest
-```
-
-### Parallel Execution
-
-FFT and matrix operations rely on NumPy's multithreaded BLAS libraries.
-Only the underlying BLAS/LAPACK routines honor the `OMP_NUM_THREADS`
-environment variable automatically. Other Python code typically runs
-single-threaded.
-
-Check which optimizations are active by running:
+Check active optimizations:
 
 ```bash
 python -m parallel_utils
 ```
 
-### Script Usage
+---
 
-The analysis scripts (`pod.py`, `spod.py`, and `bmsd.py`) can now be executed in
-separate stages. Each accepts the flags `--prep`, `--compute`, and `--plot` to
-run only the desired part of the workflow:
+## Project Structure
 
-```bash
-python pod.py --prep      # preprocess input data
-python pod.py --compute   # perform the decomposition
-python pod.py --plot      # generate figures from results
 ```
-
-Running a script with no flags executes all steps in sequence. The same options
-apply to `spod.py` and `bmsd.py`.
+pyModal/
+├── pod.py          # Proper Orthogonal Decomposition
+├── dmd.py          # Dynamic Mode Decomposition
+├── spod.py         # Spectral POD
+├── bmsd.py         # Bispectral Mode Decomposition
+├── pyModal.py      # Sequential runner for all methods
+├── examples_2d.py  # Benchmark examples (Double Gyre, Taylor-Green, Cylinder Wake)
+├── utils.py        # BaseAnalyzer class, common routines
+├── configs.py      # Global settings
+├── data_interface.py  # Data loaders (.mat, .h5, .npz)
+└── fft/            # FFT backend implementations
+```
 
 ---
 
-## 🧐 Developer Notes
+## References
 
-This section summarizes how the repository is organized and the mathematics implemented. It is intended for contributors extending the code.
+- **SPOD:** Towne, Schmidt & Colonius (2018) — [arXiv:1708.04393](https://arxiv.org/abs/1708.04393)
+- **BSMD:** Nekkanti, Pickering, Schmidt & Colonius (2025) — [arXiv:2502.15091](https://arxiv.org/abs/2502.15091)
+- **ST-POD:** Yeung & Schmidt (2025) — [arXiv:2502.09746](https://arxiv.org/abs/2502.09746) *(planned)*
 
-### Code layout
+---
 
-- `spod.py`, `bmsd.py`, `pod.py` and `dmd.py` implement Spectral POD, Bispectral Mode Decomposition, standard POD and Dynamic Mode Decomposition respectively.
-- `utils.py` provides the `BaseAnalyzer` class with common routines for loading data, computing FFT blocks via `blocksfft`, and saving results.
-- `configs.py` contains global settings such as output directories, plotting defaults and the FFT backend.
-- The `fft/` folder houses backend-specific FFT helpers.
+## Developer Notes
 
-### Mathematical overview
+<details>
+<summary>Click to expand mathematical details and extension guide</summary>
 
-**POD** performs a weighted singular value decomposition of the mean-subtracted snapshots. Depending on the dimensions it solves either the temporal or spatial covariance problem and projects the data to obtain modes and time coefficients.
+### Mathematical Overview
 
-**SPOD** solves an eigenvalue problem for the cross–spectral density matrix. FFT blocks of the signal are computed with Welch's method (`blocksfft`). For each frequency bin `f_i` the weighted matrix
-\[M_i = X_i^H W X_i\]
-is diagonalized to obtain spatial modes and their energies.
+**POD** performs a weighted SVD of mean-subtracted snapshots. Depending on dimensions, it solves either the temporal or spatial covariance problem.
 
-**BSMD** analyzes triadic interactions. For a triad `(p1,p2,p3)` with `f_{p1}+f_{p2}=f_{p3}` it forms matrices `A` and `B` from cached FFT blocks and solves
-\[C = A^\dagger W B,\quad C a = \lambda a.\]
-The resulting eigenvectors reconstruct two coupled sets of spatial modes.
+**SPOD** solves an eigenvalue problem for the cross-spectral density matrix. FFT blocks are computed with Welch's method. For each frequency bin, the weighted matrix M = X^H W X is diagonalized.
+
+**BSMD** analyzes triadic interactions. For a triad (p1, p2, p3) with f_p1 + f_p2 = f_p3, it forms matrices A and B from cached FFT blocks and solves C = A† W B, C a = λ a.
 
 ### Caching
 
-Intermediate FFT blocks (`qhat`) are stored in HDF5 files whose names are generated by `make_result_filename`. Both SPOD and BSMD check for an existing cache before recomputing, and BSMD can reuse SPOD caches. This greatly speeds up iterative analyses and ensures reproducibility.
+FFT blocks (`qhat`) are stored in HDF5 files. Both SPOD and BSMD check for existing caches before recomputing—BSMD can reuse SPOD caches directly.
 
-### Threads and performance
+### Extending
 
-FFT computation uses the backend specified in `configs.py` and automatically leverages the multithreaded BLAS library shipped with NumPy. The helper `get_num_threads()` reports the number of threads requested via `OMP_NUM_THREADS`, but only BLAS/LAPACK operations use these threads by default.
+- Subclass `BaseAnalyzer` for new decompositions
+- Results go in `results_*/`, figures in `figs_*/`
+- Override settings via `configs.load_config("custom.yaml")`
 
-### Extending the code
-
-- New decompositions can be developed by subclassing `BaseAnalyzer`.
-- Place cached data and figures in the respective `results_*` and `figs_*` directories.
-- Override any global option via a JSON or YAML file passed to `configs.load_config()`.
-- For BSMD, adjust the `ALL_TRIADS` list or provide your own set of frequency triplets.
-
-By documenting these design choices, new contributors should be able to navigate the project and implement future updates more easily.
+</details>
 
