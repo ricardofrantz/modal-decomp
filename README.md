@@ -8,6 +8,9 @@
 ```
 
 [![CI](https://github.com/ricardofrantz/pyModal/actions/workflows/ci.yml/badge.svg)](https://github.com/ricardofrantz/pyModal/actions/workflows/ci.yml)
+![Python 3.14](https://img.shields.io/badge/Python-3.14-blue)
+![macOS](https://img.shields.io/badge/macOS-15-lightgrey)
+![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04-orange)
 
 # pyModal — modal decompositions in pure Python
 
