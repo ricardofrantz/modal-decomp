@@ -98,7 +98,7 @@ QUICK BENCHMARK
 
 To compare backends on your system:
 
-    from fft.fft_backends import benchmark_backends, get_available_backends
+    from pymodal.fft.fft_backends import benchmark_backends, get_available_backends
     print(f"Available: {get_available_backends()}")
     results = benchmark_backends(size=65536, iterations=50)
     for name, time_ms in sorted(results.items(), key=lambda x: x[1] if isinstance(x[1], float) else 999):
@@ -109,11 +109,7 @@ To compare backends on your system:
 
 import sys
 import os
-try:
-    from configs import FFT_BACKEND
-except ImportError:
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-    from configs import FFT_BACKEND
+from pymodal.core.config import FFT_BACKEND
 
 
 def accelerate_fft(x, axis=0):

@@ -58,7 +58,7 @@ With data transfer (H2D + FFT + D2H):
 USAGE
 =============================================================================
 
-    from fft.gpu_utils import GPUBatchFFT, should_use_gpu
+    from pymodal.fft.gpu_utils import GPUBatchFFT, should_use_gpu
 
     # Check if GPU is beneficial for your workload
     if should_use_gpu(array_size=65536, batch_size=64):

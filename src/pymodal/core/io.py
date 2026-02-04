@@ -215,7 +215,7 @@ class DNamiXNPZLoader(DataLoader):
         available_fields = None
         Nx = Ny = None
 
-        from utils import get_num_threads, parallel_map
+        from pymodal.core.base import get_num_threads, parallel_map
 
         npz_list = parallel_map(np.load, files, threads=get_num_threads())
 

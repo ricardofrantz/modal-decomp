@@ -1,6 +1,6 @@
 import numpy as np
 
-from spod import SPODAnalyzer
+from pymodal import SPODAnalyzer
 
 
 def test_plot_eigenvalues_v2(tmp_path):

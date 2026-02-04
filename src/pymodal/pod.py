@@ -28,22 +28,20 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.linalg  # For eigh
 
-from configs import (
+from pymodal.core.config import (
     CMAP_DIV,
     CMAP_SEQ,
     FIG_DPI,
     FIGURES_DIR_POD,
     RESULTS_DIR_POD,
 )
-from fft.spectral_utils import find_peaks, periodogram_rfft
-from parallel_utils import print_optimization_status
-
-# Local application/library specific imports
-from utils import (
+from pymodal.fft.spectral_utils import find_peaks, periodogram_rfft
+from pymodal.core.parallel import print_optimization_status
+from pymodal.core.base import (
     BaseAnalyzer,
     auto_detect_weight_type,
     get_fig_aspect_ratio,
-    make_result_filename,  # For saving results
+    make_result_filename,
     print_summary,
 )
 
@@ -1224,7 +1222,7 @@ if __name__ == "__main__":
     print_optimization_status()
 
     if args.config:
-        from configs import load_config
+        from pymodal.core.config import load_config
 
         load_config(args.config)
 
@@ -1240,7 +1238,7 @@ if __name__ == "__main__":
     # ---------------------
 
     # Loop over all available fields in the consolidated npz
-    from data_interface import DNamiXNPZLoader
+    from pymodal.core.io import DNamiXNPZLoader
 
     loader = DNamiXNPZLoader()
     available_fields = loader.get_available_fields(data_file)

@@ -546,7 +546,7 @@ def plot_2d_modes(data: dict, modes: np.ndarray, prefix: str, n_modes: int = 4,
 
 def demo_pod(data: dict, n_modes: int = 10, plot: bool = True, prefix: str = None):
     """Run POD analysis on 2D data."""
-    from pod import PODAnalyzer
+    from pymodal import PODAnalyzer
 
     # Use case name as prefix for unique filenames
     if prefix is None:
@@ -586,7 +586,7 @@ def demo_pod(data: dict, n_modes: int = 10, plot: bool = True, prefix: str = Non
 
 def demo_dmd(data: dict, n_modes: int = 10, plot: bool = True, prefix: str = None):
     """Run DMD analysis on 2D data."""
-    from dmd import DMDAnalyzer
+    from pymodal import DMDAnalyzer
 
     # Use case name as prefix for unique filenames
     if prefix is None:
@@ -645,7 +645,7 @@ def demo_dmd(data: dict, n_modes: int = 10, plot: bool = True, prefix: str = Non
 
 def demo_spod(data: dict, nfft: int = 128, plot: bool = True, prefix: str = None):
     """Run SPOD analysis on 2D data."""
-    from spod import SPODAnalyzer
+    from pymodal import SPODAnalyzer
 
     # Use case name as prefix for unique filenames
     if prefix is None:

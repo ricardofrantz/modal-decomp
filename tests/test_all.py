@@ -74,7 +74,7 @@ def section(title: str):
 
 def test_pod():
     """Test Proper Orthogonal Decomposition."""
-    from pod import PODAnalyzer
+    from pymodal import PODAnalyzer
     section("POD Validation Tests")
 
     # --- Test 1: Rank-k recovery ---
@@ -152,7 +152,7 @@ def test_pod():
 
 def test_dmd():
     """Test Dynamic Mode Decomposition."""
-    from dmd import DMDAnalyzer
+    from pymodal import DMDAnalyzer
     section("DMD Validation Tests")
 
     np.random.seed(42)
@@ -284,7 +284,7 @@ def test_dmd():
 
 def test_spod():
     """Test Spectral Proper Orthogonal Decomposition."""
-    from spod import SPODAnalyzer
+    from pymodal import SPODAnalyzer
     section("SPOD Validation Tests")
 
     np.random.seed(42)
@@ -414,8 +414,8 @@ def test_cross_method():
     """Test consistency between methods."""
     section("Cross-Method Consistency Tests")
 
-    from pod import PODAnalyzer
-    from spod import SPODAnalyzer
+    from pymodal import PODAnalyzer
+    from pymodal import SPODAnalyzer
 
     np.random.seed(42)
     Nx, Ny = 8, 8
@@ -467,9 +467,9 @@ def test_cross_method():
 
 def test_heavy():
     """Heavy tests with larger degrees of freedom for real-world validation."""
-    from pod import PODAnalyzer
-    from dmd import DMDAnalyzer
-    from spod import SPODAnalyzer
+    from pymodal import PODAnalyzer
+    from pymodal import DMDAnalyzer
+    from pymodal import SPODAnalyzer
 
     section("Heavy Tests (Large DOF)")
 

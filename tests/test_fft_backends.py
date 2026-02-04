@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import sys
 
-from fft import fft_backends
+from pymodal.fft import fft_backends
 
 
 def test_backend_registration():

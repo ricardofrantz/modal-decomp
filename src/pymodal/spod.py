@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 
-from configs import (
+from pymodal.core.config import (
     CMAP_DIV,
     FIG_DPI,
     FIG_FORMAT,
@@ -22,24 +22,22 @@ from configs import (
     WINDOW_NORM,
     WINDOW_TYPE,
 )
-from parallel_utils import print_optimization_status
-
-# Local application/library specific imports
-from utils import (
+from pymodal.core.parallel import print_optimization_status
+from pymodal.core.base import (
     BaseAnalyzer,
-    auto_detect_weight_type,  # For example in __main__ or if SPODAnalyzer needs it directly
+    auto_detect_weight_type,
     get_fig_aspect_ratio,
-    get_num_threads,  # Utility to get number of available CPU threads
-    load_jetles_data,  # For example in __main__
-    load_mat_data,  # For example in __main__
+    get_num_threads,
+    load_jetles_data,
+    load_mat_data,
     make_result_filename,
     print_summary,
-    spod_function,  # Core SPOD routine for SPODAnalyzer
+    spod_function,
 )
 
 # Try to import DNamiXNPZLoader for npz support
 try:
-    from data_interface import DNamiXNPZLoader
+    from pymodal.core.io import DNamiXNPZLoader
 except ImportError:
     DNamiXNPZLoader = None
 
@@ -779,14 +777,14 @@ if __name__ == "__main__":
     parser.add_argument("--plot", action="store_true", help="Generate default plots")
     args = parser.parse_args()
 
-    from parallel_utils import get_threadpool_summary
+    from pymodal.core.parallel import get_threadpool_summary
 
     print(f"Thread pools: {get_threadpool_summary()}")
 
     print_optimization_status()
 
     if args.config:
-        from configs import load_config
+        from pymodal.core.config import load_config
 
         load_config(args.config)
 
@@ -807,7 +805,7 @@ if __name__ == "__main__":
         print(f"Error: Data file not found at '{data_file}'")
         print("Attempting to use dummy data generator...")
         try:
-            from utils import generate_dummy_data_like_jetles  # Assumed utility
+            from pymodal.core.base import generate_dummy_data_like_jetles  # Assumed utility
 
             data_file = "./data/dummy_jetles_data.h5"  # Create/use an HDF5 dummy file
             if not os.path.exists(data_file):

@@ -14,15 +14,15 @@ import h5py
 import numpy as np
 from scipy.signal import get_window
 
-from configs import *
-from data_interface import auto_detect_weight_type as di_auto_detect_weight_type
-from data_interface import load_data as di_load_data
-from data_interface import load_jetles_data as di_load_jetles_data
-from data_interface import load_mat_data as di_load_mat_data
-from fft.fft_backends import get_fft_func
+from pymodal.core.config import *
+from pymodal.core.io import auto_detect_weight_type as di_auto_detect_weight_type
+from pymodal.core.io import load_data as di_load_data
+from pymodal.core.io import load_jetles_data as di_load_jetles_data
+from pymodal.core.io import load_mat_data as di_load_mat_data
+from pymodal.fft.fft_backends import get_fft_func
 
 try:
-    from parallel_utils import (
+    from pymodal.core.parallel import (
         PARALLEL_AVAILABLE,
         blocksfft_optimized,
         calculate_polar_weights_optimized,

@@ -27,11 +27,11 @@ RUNNING THE BENCHMARK
     python 2_performance.py
 
     # Quick benchmark only (from Python)
-    from fft.fft_backends import benchmark_backends
+    from pymodal.fft.fft_backends import benchmark_backends
     results = benchmark_backends(size=65536, iterations=50)
 
     # Batch benchmark only
-    from fft.gpu_utils import benchmark_cpu_vs_gpu
+    from pymodal.fft.gpu_utils import benchmark_cpu_vs_gpu
     results = benchmark_cpu_vs_gpu()
 
 =============================================================================

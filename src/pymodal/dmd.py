@@ -24,14 +24,14 @@ import matplotlib.pyplot as plt
 warnings.filterwarnings("ignore", message="No contour levels were found within the data range.")
 import numpy as np
 
-from configs import (
+from pymodal.core.config import (
     CMAP_DIV,
     CMAP_SEQ,
     FIG_DPI,
     FIGURES_DIR_DMD,
     RESULTS_DIR_DMD,
 )
-from utils import (
+from pymodal.core.base import (
     BaseAnalyzer,
     get_fig_aspect_ratio,
     make_result_filename,
@@ -40,7 +40,7 @@ from utils import (
 
 # Try to import DNamiXNPZLoader for npz support
 try:
-    from data_interface import DNamiXNPZLoader
+    from pymodal.core.io import DNamiXNPZLoader
 except ImportError:
     DNamiXNPZLoader = None
 
@@ -608,7 +608,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.config:
-        from configs import load_config
+        from pymodal.core.config import load_config
 
         load_config(args.config)
 
@@ -663,7 +663,7 @@ if __name__ == "__main__":
             print_summary("DMD", analyzer.results_dir, analyzer.figures_dir)
     else:
         # Fallback for legacy .mat/.h5 files
-        from utils import load_mat_data
+        from pymodal.core.base import load_mat_data
 
         loader = load_mat_data
         analyzer = DMDAnalyzer(

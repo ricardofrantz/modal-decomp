@@ -1,5 +1,5 @@
 import numpy as np
-from bmsd import BSMDAnalyzer
+from pymodal import BSMDAnalyzer
 
 
 def test_static_bsmd_core_small(tmp_path):

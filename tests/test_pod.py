@@ -1,6 +1,6 @@
 import numpy as np
 from scipy import signal
-from pod import PODAnalyzer
+from pymodal import PODAnalyzer
 
 
 def test_perform_pod_simple():

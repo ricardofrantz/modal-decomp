@@ -126,7 +126,7 @@ def blocksfft_optimized(q, nfft, nblocks, novlap, blockwise_mean=False, normvar=
         FFT coefficients [freq, space, block]
     """
     # Import FFT backend
-    from fft.fft_backends import get_fft_func
+    from pymodal.fft.fft_backends import get_fft_func
 
     # Select window function
     if window_type == "sine":

@@ -1,5 +1,5 @@
 import numpy as np
-from utils import calculate_uniform_weights, calculate_polar_weights
+from pymodal.core.base import calculate_uniform_weights, calculate_polar_weights
 
 
 def test_uniform_weights_1d_vs_2d():

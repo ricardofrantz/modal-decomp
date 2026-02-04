@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib
 
-from dmd import DMDAnalyzer
+from pymodal import DMDAnalyzer
 
 
 def test_perform_dmd_simple():

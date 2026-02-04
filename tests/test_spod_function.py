@@ -1,5 +1,5 @@
 import numpy as np
-from utils import spod_function
+from pymodal.core.base import spod_function
 
 
 def test_spod_function_simple():

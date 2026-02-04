@@ -1,5 +1,5 @@
 import numpy as np
-from utils import blocksfft
+from pymodal.core.base import blocksfft
 
 
 def test_blocksfft_constant_signal():

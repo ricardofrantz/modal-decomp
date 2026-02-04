@@ -34,29 +34,27 @@ import numpy as np
 from scipy.sparse import linalg as splinalg
 from tqdm import tqdm
 
-from configs import (
+from pymodal.core.config import (
     CMAP_DIV,
     CMAP_SEQ,
     FIGURES_DIR_BSMD,
     RESULTS_DIR_BSMD,
     RESULTS_DIR_SPOD,
 )
-from parallel_utils import print_optimization_status
-
-# Local application/library specific imports
-from utils import (
+from pymodal.core.parallel import print_optimization_status
+from pymodal.core.base import (
     BaseAnalyzer,
     get_fig_aspect_ratio,
-    get_num_threads,  # For detecting available CPU threads
-    load_jetles_data,  # If used in __main__
-    load_mat_data,  # If used in __main__
-    make_result_filename,  # For saving results
+    get_num_threads,
+    load_jetles_data,
+    load_mat_data,
+    make_result_filename,
     print_summary,
 )
 
 # Try to import DNamiXNPZLoader for npz support
 try:
-    from data_interface import DNamiXNPZLoader
+    from pymodal.core.io import DNamiXNPZLoader
 except ImportError:
     DNamiXNPZLoader = None
 
@@ -749,7 +747,7 @@ if __name__ == "__main__":
     parser.add_argument("--plot", action="store_true", help="Generate example plots")
     args = parser.parse_args()
 
-    from parallel_utils import get_threadpool_summary
+    from pymodal.core.parallel import get_threadpool_summary
 
     print(f"Thread pools: {get_threadpool_summary()}")
 

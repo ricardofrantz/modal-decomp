@@ -242,16 +242,22 @@ python -m parallel_utils
 
 ```
 pyModal/
-├── pod.py          # Proper Orthogonal Decomposition
-├── dmd.py          # Dynamic Mode Decomposition
-├── spod.py         # Spectral POD
-├── bmsd.py         # Bispectral Mode Decomposition
-├── pyModal.py      # Sequential runner for all methods
-├── examples_2d.py  # Benchmark examples (Double Gyre, Taylor-Green, Cylinder Wake)
-├── utils.py        # BaseAnalyzer class, common routines
-├── configs.py      # Global settings
-├── data_interface.py  # Data loaders (.mat, .h5, .npz)
-└── fft/            # FFT backend implementations
+├── src/pymodal/           # Main package (pip installable)
+│   ├── pod.py             # Proper Orthogonal Decomposition
+│   ├── dmd.py             # Dynamic Mode Decomposition
+│   ├── spod.py            # Spectral POD
+│   ├── bmsd.py            # Bispectral Mode Decomposition
+│   ├── cli.py             # Command-line interface
+│   ├── core/              # Shared utilities
+│   │   ├── base.py        # BaseAnalyzer class
+│   │   ├── config.py      # Global settings
+│   │   ├── io.py          # Data loaders
+│   │   └── parallel.py    # Parallelization
+│   └── fft/               # FFT backends
+├── examples/              # Benchmark examples
+├── tests/                 # Unit tests
+├── docs/                  # Documentation
+└── pyproject.toml         # Package configuration
 ```
 
 ---

@@ -1,5 +1,5 @@
 import numpy as np
-from data_interface import DNamiXNPZLoader
+from pymodal.core.io import DNamiXNPZLoader
 
 
 def test_parallel_loading_identical(tmp_path, monkeypatch):

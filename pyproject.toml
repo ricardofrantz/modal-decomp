@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pymodal"
+version = "0.1.0"
+description = "Modal decompositions in pure Python — POD, DMD, SPOD, BSMD"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+    { name = "Ricardo Frantz", email = "rasfrantz@gmail.com" },
+]
+keywords = ["POD", "DMD", "SPOD", "BSMD", "modal decomposition", "fluid dynamics"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+    "h5py>=3.8",
+    "tqdm>=4.65",
+    "threadpoolctl>=3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.1",
+]
+mkl = ["mkl_fft"]
+gpu = ["cupy", "torch"]
+
+[project.scripts]
+pymodal = "pymodal.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/ricardofrantz/pyModal"
+Repository = "https://github.com/ricardofrantz/pyModal"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pymodal"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
