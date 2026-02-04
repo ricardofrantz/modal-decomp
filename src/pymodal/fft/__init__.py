@@ -4,13 +4,13 @@ FFT module for pyModal - High-performance FFT utilities with multi-backend suppo
 Available backends: scipy (default), numpy, mkl, cupy, torch, tensorflow
 
 Quick usage:
-    from fft import get_fft_func, get_available_backends
+    from pymodal.fft import get_fft_func, get_available_backends
     backends = get_available_backends()
     fft_func = get_fft_func('mkl')  # or 'scipy', 'cupy', etc.
     spectrum = fft_func(signal)
 
 For GPU batch processing:
-    from fft import GPUBatchFFT
+    from pymodal.fft import GPUBatchFFT
     processor = GPUBatchFFT()
     result = processor.fft_batch(batch_signals, axis=1)
 """
