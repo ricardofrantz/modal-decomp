@@ -331,7 +331,7 @@ def get_optimization_info():
             info["numpy_blas"] = "ATLAS"
         else:
             info["numpy_blas"] = "Standard"
-    except:
+    except Exception:
         info["numpy_blas"] = "Unknown"
 
     return info

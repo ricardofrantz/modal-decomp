@@ -1022,24 +1022,72 @@ class PODAnalyzer(BaseAnalyzer):
         # num_cols = 1 (original) + num_recons_per_snapshot
         fig, axes = plt.subplots(num_snapshots_to_show, 1 + num_recons_per_snapshot, figsize=(5 * (1 + num_recons_per_snapshot), 4 * num_snapshots_to_show), squeeze=False)  # ensure axes is always 2D array
 
+        # Setup mesh coordinates for 2D plotting
+        if is_2d_plot:
+            if x_coords.ndim == 1 and y_coords.ndim == 1:
+                x_mesh, y_mesh = np.meshgrid(x_coords, y_coords, indexing="ij")
+            else:
+                x_mesh, y_mesh = x_coords, y_coords
+
         for i, snap_idx in enumerate(snapshot_indices_to_plot):
             original_snapshot = data_mean_removed[snap_idx, :]
 
             # Plot original snapshot
             ax = axes[i, 0]
             if is_2d_plot:
-                # TODO: Implement 2D plotting for original snapshot
-                pass
+                field_2d = original_snapshot.reshape((Nx, Ny))
+                vmin, vmax = np.nanmin(field_2d), np.nanmax(field_2d)
+                levels = np.linspace(vmin, vmax, 21)
+                cf = ax.contourf(x_mesh, y_mesh, field_2d, levels=levels, cmap=CMAP_DIV, extend="both")
+                ax.set_xlabel(r"$x/D$")
+                ax.set_ylabel(r"$y/D$")
+                ax.set_aspect("equal", "box")
+                ax.set_title(f"Original (t={snap_idx})")
+                plt.colorbar(cf, ax=ax, shrink=0.8)
             else:
-                # TODO: Implement 1D plotting for original snapshot
-                pass
+                ax.plot(original_snapshot)
+                ax.set_xlabel("Spatial index")
+                ax.set_ylabel("Value")
+                ax.set_title(f"Original (t={snap_idx})")
+
+            # Plot reconstructions with different numbers of modes
+            for j, n_modes_recon in enumerate(modes_for_reconstruction):
+                ax_recon = axes[i, j + 1]
+                reconstructed = self.modes[:, :n_modes_recon] @ self.time_coefficients[:n_modes_recon, snap_idx]
+
+                if is_2d_plot:
+                    recon_2d = reconstructed.reshape((Nx, Ny))
+                    cf = ax_recon.contourf(x_mesh, y_mesh, recon_2d, levels=levels, cmap=CMAP_DIV, extend="both")
+                    ax_recon.set_xlabel(r"$x/D$")
+                    ax_recon.set_ylabel(r"$y/D$")
+                    ax_recon.set_aspect("equal", "box")
+                    ax_recon.set_title(f"Recon. k={n_modes_recon}")
+                    plt.colorbar(cf, ax=ax_recon, shrink=0.8)
+                else:
+                    ax_recon.plot(reconstructed)
+                    ax_recon.set_xlabel("Spatial index")
+                    ax_recon.set_ylabel("Value")
+                    ax_recon.set_title(f"Recon. k={n_modes_recon}")
+
+        plt.tight_layout()
+        plot_filename = os.path.join(self.figures_dir, f"{self.data_root}_pod_reconstruction_comparison.png")
+        plt.savefig(plot_filename, dpi=FIG_DPI)
+        plt.close()
+        print(f"Saving figure {plot_filename}")
 
     def check_spatial_mode_orthogonality(self, tolerance=1e-9):
         """Check the orthogonality of spatial modes with respect to weights W.
 
-                Verifies that `Modes.T @ W_diag @ Modes` is close to the identity matrix,
-        {{ ... }}
-                                               Defaults to 1e-9.
+        Verifies that `Modes.T @ W_diag @ Modes` is close to the identity matrix,
+        where W_diag is the diagonal weight matrix. This ensures that POD modes
+        form an orthonormal basis with respect to the inner product defined by W.
+
+        Args:
+            tolerance: Maximum allowed deviation from identity matrix.
+                Defaults to 1e-9.
+
+        Returns:
+            bool: True if modes are orthogonal within the specified tolerance.
         """
         if self.modes.size == 0 or self.W.size == 0:
             print("Modes or weights not available. Run perform_pod() first.")

@@ -25,6 +25,7 @@ import argparse
 import os
 import re
 import time
+from typing import Optional
 
 import h5py
 import matplotlib.pyplot as plt
@@ -578,9 +579,7 @@ class BSMDAnalyzer(BaseAnalyzer):
                 f.create_dataset("energy_map", data=self.energy_map)
         print(f"Results saved to {results_path}")
 
-    from typing import Optional
-
-    def plot_modes(self, triad_indices=None, top_n=3, plot_n_modes: Optional[int] = 10):
+    def plot_modes(self, triad_indices=None, plot_n_modes: Optional[int] = 10):
         """Plot spatial BSMD modes for selected triads."""
         if self.modes1.size == 0 or self.modes2.size == 0:
             print("No BSMD modes to plot. Run perform_bsmd() first.")

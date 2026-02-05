@@ -9,12 +9,30 @@ import glob
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Union
 
 import h5py
 import numpy as np
 from scipy.signal import get_window
 
-from pymodal.core.config import *
+from pymodal.core.config import (
+    CMAP_DIV,
+    CMAP_SEQ,
+    FFT_BACKEND,
+    FIG_DPI,
+    FIGURES_DIR,
+    FIGURES_DIR_BSMD,
+    FIGURES_DIR_DMD,
+    FIGURES_DIR_POD,
+    FIGURES_DIR_SPOD,
+    RESULTS_DIR,
+    RESULTS_DIR_BSMD,
+    RESULTS_DIR_DMD,
+    RESULTS_DIR_POD,
+    RESULTS_DIR_SPOD,
+    WINDOW_NORM,
+    WINDOW_TYPE,
+)
 from pymodal.core.io import auto_detect_weight_type as di_auto_detect_weight_type
 from pymodal.core.io import load_data as di_load_data
 from pymodal.core.io import load_jetles_data as di_load_jetles_data
@@ -29,7 +47,7 @@ try:
         get_threadpool_summary,
         spod_single_frequency_optimized,
     )
-except Exception:
+except ImportError:
     PARALLEL_AVAILABLE = False
 
 
@@ -92,9 +110,6 @@ def compute_aspect_ratio(x_coords, y_coords):
     return "auto"
 
 
-from typing import Union
-
-
 def get_aspect_ratio(data: dict) -> Union[float, str]:
     """Return aspect ratio for ``data`` using available coordinates."""
     x = data.get("x", [])
@@ -113,16 +128,10 @@ def get_fig_aspect_ratio(data: dict, clamp_low: float = 0.5, clamp_high: float =
     return max(clamp_low, min(aspect, clamp_high))
 
 
-def load_jetles_data(file_path, **kwargs):
-    return di_load_jetles_data(file_path, **kwargs)
-
-
-def load_mat_data(file_path, **kwargs):
-    return di_load_mat_data(file_path, **kwargs)
-
-
-def load_data(file_path, **kwargs):
-    return di_load_data(file_path, **kwargs)
+# Re-export data loading functions
+load_jetles_data = di_load_jetles_data
+load_mat_data = di_load_mat_data
+load_data = di_load_data
 
 
 def generate_dummy_data_like_jetles(

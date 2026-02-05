@@ -1,0 +1,479 @@
+"""
+Analytical benchmark tests for pyModal.
+
+These tests use synthetic data with KNOWN mathematical properties to verify
+that the decomposition methods produce correct results - not just "runs without
+crashing" but "the math is right".
+
+Key principle: If we construct data with known structure, we can verify the
+decomposition recovers that exact structure.
+"""
+
+import numpy as np
+import pytest
+from pymodal import PODAnalyzer, DMDAnalyzer
+
+
+# =============================================================================
+# POD Analytical Benchmarks
+# =============================================================================
+
+
+class TestPODAnalytical:
+    """POD tests with known mathematical solutions."""
+
+    def test_pod_rank2_captures_100_percent_energy(self):
+        """Exact rank-2 data should have 100% energy in exactly 2 modes.
+
+        Mathematical basis:
+        - Data = σ₁(u₁ ⊗ v₁) + σ₂(u₂ ⊗ v₂) has rank 2
+        - POD (SVD) should recover exactly 2 nonzero singular values
+        - Energy in modes 1-2 should equal total energy
+        """
+        np.random.seed(42)
+        Ns, Nx = 100, 50
+
+        # Construct rank-2 data: two orthogonal spatial patterns with time variation
+        t = np.linspace(0, 4 * np.pi, Ns)
+        x = np.linspace(0, 1, Nx)
+
+        # Mode 1: sin(t) * sin(πx) with amplitude 1.0
+        mode1_time = np.sin(t)
+        mode1_space = np.sin(np.pi * x)
+
+        # Mode 2: cos(2t) * sin(2πx) with amplitude 0.5
+        mode2_time = np.cos(2 * t)
+        mode2_space = np.sin(2 * np.pi * x)
+
+        # Data matrix: (Ns, Nspace)
+        data_matrix = np.outer(mode1_time, mode1_space) + 0.5 * np.outer(
+            mode2_time, mode2_space
+        )
+
+        data = {
+            "q": data_matrix,
+            "x": x,
+            "y": np.array([0.0]),
+            "dt": t[1] - t[0],
+            "Nx": Nx,
+            "Ny": 1,
+            "Ns": Ns,
+        }
+
+        analyzer = PODAnalyzer(
+            file_path="analytical_rank2",
+            data_loader=lambda _: data,
+            spatial_weight_type="uniform",
+            n_modes_save=10,
+        )
+        analyzer.load_and_preprocess()
+        analyzer.perform_pod()
+
+        # Verify: first 2 modes capture essentially all energy
+        total_energy = np.sum(analyzer.eigenvalues)
+        energy_in_2_modes = np.sum(analyzer.eigenvalues[:2])
+        energy_fraction = energy_in_2_modes / total_energy
+
+        assert energy_fraction > 0.9999, (
+            f"Rank-2 data should have >99.99% energy in 2 modes, got {energy_fraction*100:.4f}%"
+        )
+
+        # Verify: mode 3+ eigenvalues are essentially zero (numerical noise)
+        if len(analyzer.eigenvalues) > 2:
+            assert analyzer.eigenvalues[2] / analyzer.eigenvalues[0] < 1e-10, (
+                "Mode 3 should have negligible energy for rank-2 data"
+            )
+
+    def test_pod_reconstruction_error_decreases(self):
+        """Reconstruction error must monotonically decrease with more modes.
+
+        Mathematical basis:
+        - POD provides optimal (in L2 sense) low-rank approximation
+        - Adding more modes can only reduce or maintain error, never increase
+        """
+        np.random.seed(123)
+        Ns, Nx = 50, 30
+
+        # Create data with decaying mode amplitudes
+        t = np.linspace(0, 2 * np.pi, Ns)
+        x = np.linspace(0, 1, Nx)
+
+        data_matrix = np.zeros((Ns, Nx))
+        for k in range(1, 6):  # 5 modes with decaying amplitude
+            amplitude = 1.0 / k
+            data_matrix += amplitude * np.outer(np.sin(k * t), np.sin(k * np.pi * x))
+
+        data = {
+            "q": data_matrix,
+            "x": x,
+            "y": np.array([0.0]),
+            "dt": t[1] - t[0],
+            "Nx": Nx,
+            "Ny": 1,
+            "Ns": Ns,
+        }
+
+        analyzer = PODAnalyzer(
+            file_path="analytical_recon",
+            data_loader=lambda _: data,
+            spatial_weight_type="uniform",
+            n_modes_save=10,
+        )
+        analyzer.load_and_preprocess()
+        analyzer.perform_pod()
+
+        # Compute reconstruction errors for increasing number of modes
+        data_centered = data_matrix - analyzer.temporal_mean
+        errors = []
+        for n_modes in range(1, min(6, analyzer.modes.shape[1] + 1)):
+            # modes: (Nspace, n_modes), time_coefficients: (Ns, n_modes)
+            # reconstruction: modes @ time_coefficients.T = (Nspace, Ns)
+            reconstructed = analyzer.modes[:, :n_modes] @ analyzer.time_coefficients[:, :n_modes].T
+            error = np.linalg.norm(data_centered - reconstructed.T) / np.linalg.norm(data_centered)
+            errors.append(error)
+
+        # Verify monotonic decrease
+        for i in range(len(errors) - 1):
+            assert errors[i + 1] <= errors[i] + 1e-10, (
+                f"Error should decrease: {errors[i]:.6f} -> {errors[i+1]:.6f}"
+            )
+
+    def test_pod_modes_orthonormal(self):
+        """POD spatial modes must be orthonormal with respect to weights.
+
+        Mathematical basis:
+        - POD modes Φ satisfy: Φᵀ W Φ = I (identity matrix)
+        - This is a fundamental property of the decomposition
+        """
+        np.random.seed(456)
+        Ns, Nx = 40, 25
+
+        # Random data (to test general case, not just special structure)
+        data_matrix = np.random.randn(Ns, Nx)
+
+        data = {
+            "q": data_matrix,
+            "x": np.linspace(0, 1, Nx),
+            "y": np.array([0.0]),
+            "dt": 0.1,
+            "Nx": Nx,
+            "Ny": 1,
+            "Ns": Ns,
+        }
+
+        analyzer = PODAnalyzer(
+            file_path="analytical_ortho",
+            data_loader=lambda _: data,
+            spatial_weight_type="uniform",
+            n_modes_save=10,
+        )
+        analyzer.load_and_preprocess()
+        analyzer.perform_pod()
+
+        # Check orthonormality: Φᵀ W Φ ≈ I
+        n_modes = analyzer.modes.shape[1]
+        W = analyzer.W.flatten() if analyzer.W.ndim > 1 else analyzer.W
+        W_diag = np.diag(W)
+
+        gram_matrix = analyzer.modes.T @ W_diag @ analyzer.modes
+        identity = np.eye(n_modes)
+
+        assert np.allclose(gram_matrix, identity, atol=1e-10), (
+            f"Modes not orthonormal. Max deviation: {np.max(np.abs(gram_matrix - identity)):.2e}"
+        )
+
+    def test_pod_eigenvalues_nonnegative_ordered(self):
+        """POD eigenvalues must be non-negative and sorted in descending order.
+
+        Mathematical basis:
+        - Eigenvalues represent energy (variance) in each mode
+        - Energy cannot be negative
+        - POD convention: modes ordered by decreasing energy
+        """
+        np.random.seed(789)
+        Ns, Nx = 60, 40
+
+        data_matrix = np.random.randn(Ns, Nx)
+
+        data = {
+            "q": data_matrix,
+            "x": np.linspace(0, 1, Nx),
+            "y": np.array([0.0]),
+            "dt": 0.1,
+            "Nx": Nx,
+            "Ny": 1,
+            "Ns": Ns,
+        }
+
+        analyzer = PODAnalyzer(
+            file_path="analytical_eig",
+            data_loader=lambda _: data,
+            spatial_weight_type="uniform",
+            n_modes_save=20,
+        )
+        analyzer.load_and_preprocess()
+        analyzer.perform_pod()
+
+        # All eigenvalues non-negative
+        assert np.all(analyzer.eigenvalues >= -1e-14), (
+            f"Eigenvalues must be non-negative, got min: {np.min(analyzer.eigenvalues)}"
+        )
+
+        # Eigenvalues in descending order
+        for i in range(len(analyzer.eigenvalues) - 1):
+            assert analyzer.eigenvalues[i] >= analyzer.eigenvalues[i + 1] - 1e-14, (
+                f"Eigenvalues not sorted: λ[{i}]={analyzer.eigenvalues[i]} < λ[{i+1}]={analyzer.eigenvalues[i+1]}"
+            )
+
+
+# =============================================================================
+# DMD Analytical Benchmarks
+# =============================================================================
+
+
+class TestDMDAnalytical:
+    """DMD tests with known mathematical solutions."""
+
+    def test_dmd_recovers_oscillation_frequency(self):
+        """DMD should recover the exact frequency of a traveling wave.
+
+        Mathematical basis:
+        - Traveling wave cos(kx - ωt) has DMD eigenvalue λ = e^(iω·dt)
+        - Frequency f = arg(λ) / (2π·dt)
+
+        Note: We use a traveling wave (not standing wave) because DMD needs
+        spatially-varying dynamics, not just temporal scaling of a fixed pattern.
+        """
+        dt = 0.01
+        f_true = 5.0  # Hz
+        omega = 2 * np.pi * f_true
+        k = 2  # wavenumber
+        Ns = 200
+        Nx = 50
+
+        t = np.arange(Ns) * dt
+        x = np.linspace(0, 2 * np.pi, Nx)
+
+        # Traveling wave: cos(kx - ωt)
+        data_matrix = np.cos(k * x[None, :] - omega * t[:, None])
+
+        data = {
+            "q": data_matrix,
+            "x": x,
+            "y": np.array([0.0]),
+            "dt": dt,
+            "Nx": Nx,
+            "Ny": 1,
+            "Ns": Ns,
+        }
+
+        analyzer = DMDAnalyzer(
+            file_path="analytical_dmd_freq",
+            data_loader=lambda _: data,
+            spatial_weight_type="uniform",
+            n_modes_save=10,
+        )
+        analyzer.load_and_preprocess()
+        analyzer.perform_dmd()
+
+        # Extract frequencies from eigenvalues
+        # DMD eigenvalue λ relates to frequency via: f = arg(λ) / (2π·dt)
+        frequencies = np.abs(np.angle(analyzer.eigenvalues)) / (2 * np.pi * dt)
+
+        # Should find the true frequency
+        freq_errors = np.abs(frequencies - f_true)
+        min_error = np.min(freq_errors)
+
+        assert min_error < 0.1, (
+            f"DMD should recover f={f_true} Hz, closest found: {frequencies[np.argmin(freq_errors)]:.2f} Hz"
+        )
+
+    def test_dmd_exponential_growth_rate(self):
+        """DMD should recover the growth rate of exponentially growing data.
+
+        Mathematical basis:
+        - Data x(t) = e^(σt) has DMD eigenvalue λ = e^(σ·dt)
+        - Growth rate σ = log|λ| / dt
+        """
+        dt = 0.1
+        sigma_true = 0.5  # growth rate
+        Ns = 50
+        Nx = 15
+
+        t = np.arange(Ns) * dt
+        x = np.linspace(0, 1, Nx)
+
+        # Exponentially growing signal
+        spatial_pattern = np.sin(np.pi * x)
+        data_matrix = np.outer(np.exp(sigma_true * t), spatial_pattern)
+
+        data = {
+            "q": data_matrix,
+            "x": x,
+            "y": np.array([0.0]),
+            "dt": dt,
+            "Nx": Nx,
+            "Ny": 1,
+            "Ns": Ns,
+        }
+
+        analyzer = DMDAnalyzer(
+            file_path="analytical_dmd_growth",
+            data_loader=lambda _: data,
+            spatial_weight_type="uniform",
+            n_modes_save=5,
+        )
+        analyzer.load_and_preprocess()
+        analyzer.perform_dmd()
+
+        # Extract growth rates: σ = log|λ| / dt
+        growth_rates = np.log(np.abs(analyzer.eigenvalues)) / dt
+
+        # Find the dominant mode (largest eigenvalue magnitude)
+        dominant_idx = np.argmax(np.abs(analyzer.eigenvalues))
+        recovered_sigma = growth_rates[dominant_idx]
+
+        assert np.abs(recovered_sigma - sigma_true) < 0.05, (
+            f"DMD should recover σ={sigma_true}, got σ={recovered_sigma:.3f}"
+        )
+
+    def test_dmd_unit_circle_for_periodic(self):
+        """Purely periodic (non-decaying) signals should have eigenvalues on unit circle.
+
+        Mathematical basis:
+        - No growth/decay means |λ| = 1
+        - λ = e^(iω·dt) lies exactly on the unit circle
+
+        Note: We use traveling waves (spatially-varying dynamics) so DMD can
+        properly identify the oscillatory modes.
+        """
+        dt = 0.02
+        Ns = 100
+        Nx = 50
+
+        t = np.arange(Ns) * dt
+        x = np.linspace(0, 2 * np.pi, Nx)
+
+        # Two traveling waves with different frequencies
+        f1, f2 = 3.0, 7.0
+        k1, k2 = 1, 2
+        data_matrix = (
+            np.cos(k1 * x[None, :] - 2 * np.pi * f1 * t[:, None])
+            + 0.5 * np.cos(k2 * x[None, :] - 2 * np.pi * f2 * t[:, None])
+        )
+
+        data = {
+            "q": data_matrix,
+            "x": x,
+            "y": np.array([0.0]),
+            "dt": dt,
+            "Nx": Nx,
+            "Ny": 1,
+            "Ns": Ns,
+        }
+
+        analyzer = DMDAnalyzer(
+            file_path="analytical_dmd_periodic",
+            data_loader=lambda _: data,
+            spatial_weight_type="uniform",
+            n_modes_save=10,
+        )
+        analyzer.load_and_preprocess()
+        analyzer.perform_dmd()
+
+        # All eigenvalues should have magnitude ≈ 1 for periodic data
+        magnitudes = np.abs(analyzer.eigenvalues)
+
+        # At least the dominant modes should be on/near unit circle
+        dominant_mags = np.sort(magnitudes)[-4:]  # top 4 eigenvalues
+        for mag in dominant_mags:
+            assert np.abs(mag - 1.0) < 0.1, (
+                f"Periodic data should have |λ|≈1, got |λ|={mag:.3f}"
+            )
+
+
+# =============================================================================
+# Edge Cases
+# =============================================================================
+
+
+class TestEdgeCases:
+    """Tests for edge cases that might break the algorithms."""
+
+    def test_pod_single_snapshot_raises(self):
+        """POD should raise ValueError for single snapshot (needs at least 2)."""
+        data = {
+            "q": np.array([[1.0, 2.0, 3.0]]),  # 1 snapshot, 3 spatial points
+            "x": np.array([0.0, 1.0, 2.0]),
+            "y": np.array([0.0]),
+            "dt": 1.0,
+            "Nx": 3,
+            "Ny": 1,
+            "Ns": 1,
+        }
+
+        analyzer = PODAnalyzer(
+            file_path="edge_single",
+            data_loader=lambda _: data,
+            spatial_weight_type="uniform",
+            n_modes_save=1,
+        )
+        analyzer.load_and_preprocess()
+
+        # POD requires at least 2 snapshots
+        with pytest.raises(ValueError, match="at least 2 snapshots"):
+            analyzer.perform_pod()
+
+    def test_pod_constant_data(self):
+        """POD on constant data should have zero variance modes."""
+        Ns, Nx = 20, 10
+        constant_value = 5.0
+        data_matrix = np.full((Ns, Nx), constant_value)
+
+        data = {
+            "q": data_matrix,
+            "x": np.linspace(0, 1, Nx),
+            "y": np.array([0.0]),
+            "dt": 0.1,
+            "Nx": Nx,
+            "Ny": 1,
+            "Ns": Ns,
+        }
+
+        analyzer = PODAnalyzer(
+            file_path="edge_constant",
+            data_loader=lambda _: data,
+            spatial_weight_type="uniform",
+            n_modes_save=5,
+        )
+        analyzer.load_and_preprocess()
+        analyzer.perform_pod()
+
+        # After mean subtraction, data is all zeros -> zero eigenvalues
+        assert np.allclose(analyzer.eigenvalues, 0, atol=1e-10), (
+            "Constant data should have zero eigenvalues after mean subtraction"
+        )
+
+    def test_dmd_two_snapshots(self):
+        """DMD with minimum viable data (2 snapshots)."""
+        data = {
+            "q": np.array([[1.0, 2.0], [2.0, 4.0]]),  # 2 snapshots
+            "x": np.array([0.0, 1.0]),
+            "y": np.array([0.0]),
+            "dt": 1.0,
+            "Nx": 2,
+            "Ny": 1,
+            "Ns": 2,
+        }
+
+        analyzer = DMDAnalyzer(
+            file_path="edge_two_snaps",
+            data_loader=lambda _: data,
+            spatial_weight_type="uniform",
+            n_modes_save=2,
+        )
+        analyzer.load_and_preprocess()
+        analyzer.perform_dmd()
+
+        # Should produce at least 1 mode
+        assert analyzer.modes.shape[1] >= 1
