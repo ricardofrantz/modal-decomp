@@ -11,7 +11,7 @@ decomposition recovers that exact structure.
 
 import numpy as np
 import pytest
-from pymodal import PODAnalyzer, DMDAnalyzer
+from pymodal import PODAnalyzer, DMDAnalyzer, STPODAnalyzer
 
 
 # =============================================================================
@@ -477,3 +477,218 @@ class TestEdgeCases:
 
         # Should produce at least 1 mode
         assert analyzer.modes.shape[1] >= 1
+
+
+# =============================================================================
+# ST-POD Analytical Benchmarks
+# =============================================================================
+
+
+class TestSTPODAnalytical:
+    """ST-POD tests with known mathematical solutions."""
+
+    def test_stpod_traveling_wave_rank(self):
+        """Traveling wave should have bounded rank in Hankel matrix.
+
+        Mathematical basis:
+        - A traveling wave cos(kx - ωt) can be written as:
+          cos(kx)cos(ωt) + sin(kx)sin(ωt)
+        - This is rank-2 in standard POD
+        - In ST-POD with embedding dimension d, the Hankel matrix captures
+          d consecutive time steps, but the underlying dynamics still have
+          bounded rank related to the number of independent oscillations.
+        """
+        dt = 0.02
+        f = 5.0
+        omega = 2 * np.pi * f
+        k = 2
+        Ns = 100
+        Nx = 40
+
+        t = np.arange(Ns) * dt
+        x = np.linspace(0, 2 * np.pi, Nx)
+
+        # Traveling wave
+        data_matrix = np.cos(k * x[None, :] - omega * t[:, None])
+
+        data = {
+            "q": data_matrix,
+            "x": x,
+            "y": np.array([0.0]),
+            "dt": dt,
+            "Nx": Nx,
+            "Ny": 1,
+            "Ns": Ns,
+        }
+
+        embedding_dim = 10
+        analyzer = STPODAnalyzer(
+            file_path="analytical_stpod_wave",
+            embedding_dim=embedding_dim,
+            data_loader=lambda _: data,
+            spatial_weight_type="uniform",
+            n_modes_save=20,
+        )
+        analyzer.load_and_preprocess()
+        analyzer.perform_stpod()
+
+        # The first few modes should capture essentially all energy
+        total_energy = np.sum(analyzer.eigenvalues)
+        energy_first_4 = np.sum(analyzer.eigenvalues[:4])
+        energy_fraction = energy_first_4 / total_energy
+
+        assert energy_fraction > 0.99, (
+            f"Traveling wave should have >99% energy in first 4 modes, got {energy_fraction*100:.2f}%"
+        )
+
+    def test_stpod_reconstruction_error_decreases(self):
+        """Reconstruction error must decrease with more modes.
+
+        Mathematical basis:
+        - Adding more SVD modes can only reduce or maintain approximation error
+        - This is a fundamental property of SVD truncation
+        """
+        np.random.seed(42)
+        Ns, Nx = 50, 30
+
+        # Multi-mode signal
+        t = np.linspace(0, 4 * np.pi, Ns)
+        x = np.linspace(0, 1, Nx)
+
+        data_matrix = np.zeros((Ns, Nx))
+        for k in range(1, 5):
+            data_matrix += (1.0 / k) * np.outer(np.sin(k * t), np.sin(k * np.pi * x))
+
+        data = {
+            "q": data_matrix,
+            "x": x,
+            "y": np.array([0.0]),
+            "dt": t[1] - t[0],
+            "Nx": Nx,
+            "Ny": 1,
+            "Ns": Ns,
+        }
+
+        embedding_dim = 8
+        analyzer = STPODAnalyzer(
+            file_path="analytical_stpod_recon",
+            embedding_dim=embedding_dim,
+            data_loader=lambda _: data,
+            spatial_weight_type="uniform",
+            n_modes_save=15,
+        )
+        analyzer.load_and_preprocess()
+        analyzer.perform_stpod()
+
+        # Reconstruct Hankel matrix with increasing modes
+        # The SVD gives us: H_weighted = U @ diag(sigma) @ Vt
+        # After unweighting modes: modes = U / sqrt_w_ext
+        # And time_coefficients = Vt.T * sigma (so Vt = time_coeffs.T / sigma)
+        # Reconstruction of H: modes @ time_coefficients.T = (U/sqrt_w) @ sigma @ Vt
+        # To get back H, we need: H = (modes * sqrt_w) @ time_coefficients.T / sqrt_w
+        # But simpler: just use modes @ time_coefficients.T which gives H (unweighted)
+        data_centered = data_matrix - analyzer.temporal_mean
+        H = analyzer._build_hankel_matrix(data_centered)
+        H_norm = np.linalg.norm(H, "fro")
+
+        errors = []
+        for n_modes in range(1, min(8, analyzer.n_modes_save + 1)):
+            # Reconstruct: modes @ time_coefficients.T = U @ sigma @ Vt (unweighted form)
+            H_recon = analyzer.modes[:, :n_modes] @ analyzer.time_coefficients[:, :n_modes].T
+            error = np.linalg.norm(H - H_recon, "fro") / H_norm
+            errors.append(error)
+
+        # Verify monotonic decrease (with small tolerance for numerical noise)
+        for i in range(len(errors) - 1):
+            assert errors[i + 1] <= errors[i] + 1e-8, (
+                f"Error should decrease: {errors[i]:.6f} -> {errors[i+1]:.6f}"
+            )
+
+    def test_stpod_modes_orthonormal(self):
+        """ST-POD modes must be orthonormal with respect to extended weights.
+
+        Mathematical basis:
+        - ST-POD modes U satisfy: Uᵀ W_ext U = I
+        - where W_ext is the spatial weight matrix extended to d copies
+        """
+        np.random.seed(789)
+        Ns, Nx = 40, 20
+
+        data_matrix = np.random.randn(Ns, Nx)
+
+        data = {
+            "q": data_matrix,
+            "x": np.linspace(0, 1, Nx),
+            "y": np.array([0.0]),
+            "dt": 0.1,
+            "Nx": Nx,
+            "Ny": 1,
+            "Ns": Ns,
+        }
+
+        embedding_dim = 6
+        analyzer = STPODAnalyzer(
+            file_path="analytical_stpod_ortho",
+            embedding_dim=embedding_dim,
+            data_loader=lambda _: data,
+            spatial_weight_type="uniform",
+            n_modes_save=10,
+        )
+        analyzer.load_and_preprocess()
+        analyzer.perform_stpod()
+
+        # Check orthonormality
+        n_modes = analyzer.modes.shape[1]
+        W_ext = np.ones(embedding_dim * Nx)  # uniform weights extended
+        W_diag = np.diag(W_ext)
+
+        gram = analyzer.modes.T @ W_diag @ analyzer.modes
+        identity = np.eye(n_modes)
+
+        assert np.allclose(gram, identity, atol=1e-10), (
+            f"Modes not orthonormal. Max deviation: {np.max(np.abs(gram - identity)):.2e}"
+        )
+
+    def test_stpod_eigenvalues_nonnegative_sorted(self):
+        """ST-POD eigenvalues must be non-negative and descending.
+
+        Mathematical basis:
+        - Eigenvalues are squared singular values, hence non-negative
+        - Convention: sorted in descending order by energy
+        """
+        np.random.seed(101)
+        Ns, Nx = 50, 25
+
+        data_matrix = np.random.randn(Ns, Nx)
+
+        data = {
+            "q": data_matrix,
+            "x": np.linspace(0, 1, Nx),
+            "y": np.array([0.0]),
+            "dt": 0.1,
+            "Nx": Nx,
+            "Ny": 1,
+            "Ns": Ns,
+        }
+
+        embedding_dim = 7
+        analyzer = STPODAnalyzer(
+            file_path="analytical_stpod_eig",
+            embedding_dim=embedding_dim,
+            data_loader=lambda _: data,
+            spatial_weight_type="uniform",
+            n_modes_save=15,
+        )
+        analyzer.load_and_preprocess()
+        analyzer.perform_stpod()
+
+        # Non-negative
+        assert np.all(analyzer.eigenvalues >= -1e-14), (
+            f"Eigenvalues must be non-negative, min: {np.min(analyzer.eigenvalues)}"
+        )
+
+        # Descending order
+        for i in range(len(analyzer.eigenvalues) - 1):
+            assert analyzer.eigenvalues[i] >= analyzer.eigenvalues[i + 1] - 1e-14, (
+                f"Not sorted: λ[{i}]={analyzer.eigenvalues[i]} < λ[{i+1}]={analyzer.eigenvalues[i+1]}"
+            )

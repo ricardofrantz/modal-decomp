@@ -42,7 +42,8 @@ cache/
 *.mat
 *.h5
 *.hdf5
-!data/*.npz
+!data/**/*.npz
+!data/**/*.mat
 
 # macOS
 .DS_Store

@@ -14,6 +14,7 @@ from pymodal.pod import PODAnalyzer
 from pymodal.dmd import DMDAnalyzer
 from pymodal.spod import SPODAnalyzer
 from pymodal.bmsd import BSMDAnalyzer
+from pymodal.stpod import STPODAnalyzer
 
 __version__ = "0.1.0"
-__all__ = ["PODAnalyzer", "DMDAnalyzer", "SPODAnalyzer", "BSMDAnalyzer"]
+__all__ = ["PODAnalyzer", "DMDAnalyzer", "SPODAnalyzer", "BSMDAnalyzer", "STPODAnalyzer"]

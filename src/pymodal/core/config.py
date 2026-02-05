@@ -13,30 +13,34 @@ os.environ["OS_ACTIVITY_MODE"] = "disable"  # suppress macOS IMKClient logs
 Configuration and shared imports for modal decomposition tools.
 """
 
-# Default directories
-RESULTS_DIR = "./preprocess"  # Legacy generic results
-FIGURES_DIR = "./figs"  # Legacy generic figures
+# Default directories - organized by case, then method
+# Structure: results/{case}/{method}/, figures/{case}/{method}/
+RESULTS_DIR = "./results"
+FIGURES_DIR = "./figures"
 CACHE_DIR = "./cache"
 
-# Analyzer-specific directories
-RESULTS_DIR_SPOD = "./results_spod"
-RESULTS_DIR_POD = "./results_pod"
-RESULTS_DIR_BSMD = "./results_bsmd"
-RESULTS_DIR_DMD = "./results_dmd"
+# Legacy analyzer-specific directories (for backwards compatibility)
+# New code should use results/{case}/{method}/ pattern
+RESULTS_DIR_SPOD = "./results"
+RESULTS_DIR_POD = "./results"
+RESULTS_DIR_BSMD = "./results"
+RESULTS_DIR_DMD = "./results"
+RESULTS_DIR_STPOD = "./results"
 
-FIGURES_DIR_SPOD = "./figs_spod"
-FIGURES_DIR_POD = "./figs_pod"
-FIGURES_DIR_BSMD = "./figs_bsmd"
-FIGURES_DIR_DMD = "./figs_dmd"
+FIGURES_DIR_SPOD = "./figures"
+FIGURES_DIR_POD = "./figures"
+FIGURES_DIR_BSMD = "./figures"
+FIGURES_DIR_DMD = "./figures"
+FIGURES_DIR_STPOD = "./figures"
 
-# Optional preprocessing directories
-PREPROCESS_DIR_SPOD = "./preprocess_spod"
-PREPROCESS_DIR_POD = "./preprocess_pod"
-PREPROCESS_DIR_BSMD = "./preprocess_bsmd"
-PREPROCESS_DIR_DMD = "./preprocess_dmd"
+# Data directory structure
+DATA_DIR = "./data"
+DATA_DIR_CAVITY = "./data/cavity"
+DATA_DIR_JET = "./data/jet"
+DATA_DIR_DNAMIX = "./data/dnamix"
 
 # Default dataset used when no --data argument is provided
-DEFAULT_DATA_FILE = "./data/snp1-947_u.npz"
+DEFAULT_DATA_FILE = "./data/dnamix/snp1-947_u.npz"
 
 # Figure saving options
 FIG_DPI = 500

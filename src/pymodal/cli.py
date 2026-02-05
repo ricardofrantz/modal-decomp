@@ -25,7 +25,7 @@ Examples:
     pymodal --all --data ./data/file.mat
         """,
     )
-    parser.add_argument("method", nargs="?", choices=["pod", "dmd", "spod", "bsmd", "all"],
+    parser.add_argument("method", nargs="?", choices=["pod", "dmd", "spod", "bsmd", "stpod", "all"],
                         default="all", help="Analysis method to run")
     parser.add_argument("--data", type=str, help="Path to data file")
     parser.add_argument("--prep", action="store_true", help="Preprocess data only")
@@ -34,10 +34,12 @@ Examples:
     parser.add_argument("--nfft", type=int, default=256, help="FFT block size (SPOD/BSMD)")
     parser.add_argument("--overlap", type=float, default=0.5, help="Block overlap (SPOD/BSMD)")
     parser.add_argument("--n-modes", type=int, default=10, help="Number of modes to save")
+    parser.add_argument("--embedding-dim", type=int, default=10,
+                        help="Time delay embedding dimension (ST-POD)")
 
     args = parser.parse_args()
 
-    methods = ["pod", "dmd", "spod", "bsmd"] if args.method == "all" else [args.method]
+    methods = ["pod", "dmd", "spod", "bsmd", "stpod"] if args.method == "all" else [args.method]
 
     for method in methods:
         print(f"\n{'='*60}")
@@ -99,6 +101,24 @@ Examples:
             )
             if not args.compute and not args.plot:
                 analyzer.run()
+
+        elif method == "stpod":
+            from pymodal.stpod import STPODAnalyzer
+            analyzer = STPODAnalyzer(
+                file_path=args.data or "data.mat",
+                embedding_dim=args.embedding_dim,
+                n_modes_save=args.n_modes,
+            )
+            if not args.compute and not args.plot:
+                analyzer.run_analysis()
+            elif args.compute:
+                analyzer.load_and_preprocess()
+                analyzer.perform_stpod()
+                analyzer.save_results()
+            elif args.plot:
+                analyzer.load_results()
+                analyzer.plot_eigenvalues()
+                analyzer.plot_modes()
 
     print("\nDone!")
 
