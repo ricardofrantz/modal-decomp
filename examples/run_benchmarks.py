@@ -90,7 +90,8 @@ def generate_double_gyre(
         u[i] = -np.pi * A * np.sin(np.pi * f) * np.cos(np.pi * Y)
         v[i] = np.pi * A * np.cos(np.pi * f) * np.sin(np.pi * Y) * dfdx
 
-    q = np.hstack([u.reshape(Nt, -1), v.reshape(Nt, -1)])
+    # Use u component only (consistent with spatial weight dimensions)
+    q = u.reshape(Nt, -1)
 
     return {
         "q": q,
@@ -135,7 +136,8 @@ def generate_taylor_green(
         u[i] = -U0 * np.cos(X) * np.sin(Y) * d
         v[i] = U0 * np.sin(X) * np.cos(Y) * d
 
-    q = np.hstack([u.reshape(Nt, -1), v.reshape(Nt, -1)])
+    # Use u component only (consistent with spatial weight dimensions)
+    q = u.reshape(Nt, -1)
 
     return {
         "q": q,
@@ -197,7 +199,8 @@ def generate_cylinder_wake(
     u += rng.standard_normal(u.shape) * 0.02 * U_inf
     v += rng.standard_normal(v.shape) * 0.02 * U_inf
 
-    q = np.hstack([u.reshape(Nt, -1), v.reshape(Nt, -1)])
+    # Use u component only (consistent with spatial weight dimensions)
+    q = u.reshape(Nt, -1)
 
     return {
         "q": q,
