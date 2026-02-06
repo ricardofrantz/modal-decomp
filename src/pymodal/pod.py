@@ -449,9 +449,11 @@ class PODAnalyzer(BaseAnalyzer):
                 if mode_flat.size == 0:
                     print(f"  Warning: Mode {mode_idx} has no valid data points, skipping plot.")
                     continue
-                # Compute levels
-                vmin = np.nanmin(mode_flat)
-                vmax = np.nanmax(mode_flat)
+                # Compute levels with robust limits
+                from pymodal.core.base import get_robust_clim
+                # Use percentile method but don't force symmetry for sequential colormap
+                mode_clean = mode_flat[np.isfinite(mode_flat)]
+                vmin, vmax = np.percentile(mode_clean, [2, 98]) if len(mode_clean) > 0 else (0, 1)
                 levels = np.linspace(vmin, vmax, 21)
                 # Plot filled contour
                 cf = ax.contourf(x_mesh, y_mesh, mode_plot, levels=levels, cmap=CMAP_SEQ, extend="both")
@@ -546,8 +548,9 @@ class PODAnalyzer(BaseAnalyzer):
                     field = np.ma.array(mode_2d, mask=mask)
                 else:
                     field = mode_2d
-                vmax = np.max(np.abs(field))
-                levels = np.linspace(-vmax, vmax, 21)
+                from pymodal.core.base import get_robust_clim
+                vmin, vmax = get_robust_clim(field, method="percentile")
+                levels = np.linspace(vmin, vmax, 21)
 
                 cf = ax.contourf(
                     x_mesh,
@@ -664,9 +667,10 @@ class PODAnalyzer(BaseAnalyzer):
                 else:
                     mode_plot = mode_2d
 
-                # Calculate contour levels with symmetric diverging scale
-                vmax = np.max(np.abs(mode_plot))
-                levels = np.linspace(-vmax, vmax, 21)
+                # Calculate contour levels with robust symmetric diverging scale
+                from pymodal.core.base import get_robust_clim
+                vmin, vmax = get_robust_clim(mode_plot, method="percentile")
+                levels = np.linspace(vmin, vmax, 21)
 
                 # Plot contours
                 cf = ax.contourf(x_mesh, y_mesh, mode_plot, levels=levels, cmap=cmap, extend="both")

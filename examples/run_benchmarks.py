@@ -268,33 +268,12 @@ EXPERIMENTAL_CASES = {
         "embedding_dim": 20,
         "description": "Jet LES full (5000 snapshots, 6825 spatial)",
     },
-    "dnamix_1": {
+    "cylinder_wake_compressible": {
         "file": "dnamix/snp1-947_u.npz",
         "weight_type": "uniform",
         "nfft": 128,
         "embedding_dim": 15,
-        "description": "DNamiX snapshots 1-947 (947 snapshots, 40800 spatial)",
-    },
-    "dnamix_2": {
-        "file": "dnamix/snp948-1894_u.npz",
-        "weight_type": "uniform",
-        "nfft": 128,
-        "embedding_dim": 15,
-        "description": "DNamiX snapshots 948-1894",
-    },
-    "dnamix_3": {
-        "file": "dnamix/snp1895-2841_u.npz",
-        "weight_type": "uniform",
-        "nfft": 128,
-        "embedding_dim": 15,
-        "description": "DNamiX snapshots 1895-2841",
-    },
-    "dnamix_4": {
-        "file": "dnamix/snp2842-3000_u.npz",
-        "weight_type": "uniform",
-        "nfft": 64,
-        "embedding_dim": 10,
-        "description": "DNamiX snapshots 2842-3000 (159 snapshots)",
+        "description": "Compressible cylinder wake Re~100-200 (3000 snapshots, 40800 spatial)",
     },
 }
 
@@ -409,6 +388,10 @@ def run_method(
                     result,
                 )
                 _safe_plot(analyzer.plot_cumulative_energy, result)
+                _safe_plot(
+                    lambda: plot_time_coeff_spectra(analyzer, str(figures_dir), method),
+                    result,
+                )
 
         elif method == "dmd":
             analyzer = DMDAnalyzer(
@@ -441,6 +424,10 @@ def run_method(
                     result,
                 )
                 _safe_plot(analyzer.plot_cumulative_energy, result)
+                _safe_plot(
+                    lambda: plot_time_coeff_spectra(analyzer, str(figures_dir), method),
+                    result,
+                )
 
         elif method == "spod":
             analyzer = SPODAnalyzer(
@@ -527,6 +514,10 @@ def run_method(
                     result,
                 )
                 _safe_plot(analyzer.plot_cumulative_energy, result)
+                _safe_plot(
+                    lambda: plot_time_coeff_spectra(analyzer, str(figures_dir), method),
+                    result,
+                )
 
         # Extract data info
         if hasattr(analyzer, "data"):
@@ -553,6 +544,51 @@ def _safe_plot(plot_func: Callable, result: BenchmarkResult) -> None:
         result.figures.append("generated")
     except Exception as e:
         print(f"    Warning: Plot failed: {e}")
+
+
+def plot_time_coeff_spectra(analyzer, figures_dir: str, method: str) -> None:
+    """Plot frequency spectra of time coefficients (FFT).
+
+    Reveals the dominant frequencies captured by each mode. For periodic flows
+    (e.g., vortex shedding), paired modes should show the same frequency peak.
+    """
+    if not hasattr(analyzer, "time_coefficients") or analyzer.time_coefficients is None:
+        return
+    tc = analyzer.time_coefficients  # (m, n_modes)
+    dt = analyzer.data.get("dt", 1.0)
+    n_modes = min(tc.shape[1], 4)
+
+    fig, axes = plt.subplots(n_modes, 1, figsize=(10, 2.5 * n_modes), sharex=True)
+    if n_modes == 1:
+        axes = [axes]
+
+    for i in range(n_modes):
+        signal = tc[:, i]
+        N = len(signal)
+        freqs = np.fft.rfftfreq(N, d=dt)
+        psd = np.abs(np.fft.rfft(signal)) ** 2 / N
+
+        axes[i].semilogy(freqs, psd, linewidth=0.8)
+        # Mark dominant frequency
+        peak_idx = np.argmax(psd[1:]) + 1  # skip DC
+        axes[i].axvline(freqs[peak_idx], color="r", linestyle="--", alpha=0.7,
+                        label=f"f={freqs[peak_idx]:.3f}")
+        # Fit y-limits: show 6 decades below peak
+        psd_pos = psd[psd > 0]
+        if len(psd_pos) > 0:
+            ymax = psd_pos.max() * 3
+            axes[i].set_ylim(ymax * 1e-6, ymax)
+        axes[i].set_ylabel(f"Mode {i+1}")
+        axes[i].legend(fontsize=8)
+        axes[i].grid(True, alpha=0.3)
+
+    axes[-1].set_xlabel("Frequency [1/dt]")
+    fig.suptitle(f"{method.upper()} Time Coefficient Spectra", fontsize=12)
+    fig.tight_layout()
+    out = Path(figures_dir) / f"{method}_time_coeff_spectra.png"
+    fig.savefig(out, dpi=150, bbox_inches="tight")
+    print(f"Saving figure {out}")
+    plt.close(fig)
 
 
 # =============================================================================

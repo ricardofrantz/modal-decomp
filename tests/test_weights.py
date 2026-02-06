@@ -25,7 +25,7 @@ def test_polar_weights_1d_vs_2d():
 
 
 def test_weights_with_dnamiX_npz():
-    npz = np.load("data/snp1-947_u.npz")
+    npz = np.load("data/dnamix/snp1-947_u.npz")
     x2d = npz["x"]
     y2d = npz["y"]
     x1d = x2d[:, 0]

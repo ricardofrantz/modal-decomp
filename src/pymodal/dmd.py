@@ -508,9 +508,9 @@ class DMDAnalyzer(BaseAnalyzer):
                     if mode_flat.size == 0:
                         print(f"  Warning: Mode {i} has no valid data points, skipping plot.")
                         continue
-                    # Compute levels
-                    vmin = np.nanmin(mode_flat)
-                    vmax = np.nanmax(mode_flat)
+                    # Compute levels with robust limits
+                    mode_clean = mode_flat[np.isfinite(mode_flat)]
+                    vmin, vmax = np.percentile(mode_clean, [2, 98]) if len(mode_clean) > 0 else (0, 1)
                     levels = np.linspace(vmin, vmax, 21)
                     # Plot filled contour
                     cf = ax.contourf(x_mesh, y_mesh, mode_plot, levels=levels, cmap=CMAP_DIV, extend="both")

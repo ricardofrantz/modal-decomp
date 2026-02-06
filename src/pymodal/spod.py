@@ -613,8 +613,9 @@ class SPODAnalyzer(BaseAnalyzer):
                             mode_plot = np.ma.array(mode_2d, mask=np.isnan(mode_2d) | cyl_mask)
                         else:
                             mode_plot = np.ma.array(mode_2d, mask=np.isnan(mode_2d))
-                        vmax = np.max(np.abs(mode_plot))
-                        levels = np.linspace(-vmax, vmax, 21)
+                        from pymodal.core.base import get_robust_clim
+                        vmin, vmax = get_robust_clim(mode_plot, method="percentile")
+                        levels = np.linspace(vmin, vmax, 21)
                         im = ax.contourf(X, Y, mode_plot, levels=levels, cmap=CMAP_DIV, extend="both")
                         ax.contour(X, Y, mode_plot, levels=levels[::4], colors="k", linewidths=0.5, alpha=0.5)
                         if show_cylinder:

@@ -117,8 +117,71 @@ def get_aspect_ratio(data: dict) -> Union[float, str]:
     return compute_aspect_ratio(x, y)
 
 
-def get_fig_aspect_ratio(data: dict, clamp_low: float = 0.5, clamp_high: float = 2.0) -> float:
-    """Return ``Nx/Ny`` ratio clamped for figure sizing."""
+def get_robust_clim(data: np.ndarray, method: str = "percentile", sigma: float = 2.5) -> tuple:
+    """Compute robust colormap limits that reduce the effect of outliers.
+
+    Parameters
+    ----------
+    data : ndarray
+        Data array (can contain NaNs which will be ignored)
+    method : str
+        'percentile' : Use 2nd and 98th percentiles
+        'sigma' : Use median ± sigma * MAD (median absolute deviation)
+        'minmax' : Use global min/max (no robustness)
+    sigma : float
+        Number of standard deviations for 'sigma' method
+
+    Returns
+    -------
+    vmin, vmax : float
+        Colormap limits
+    """
+    data_flat = np.asarray(data).ravel()
+    data_clean = data_flat[np.isfinite(data_flat)]
+
+    if len(data_clean) == 0:
+        return -1.0, 1.0
+
+    if method == "percentile":
+        vmin, vmax = np.percentile(data_clean, [2, 98])
+    elif method == "sigma":
+        median = np.median(data_clean)
+        mad = np.median(np.abs(data_clean - median))
+        # MAD to std: std ≈ 1.4826 * MAD
+        std_estimate = 1.4826 * mad
+        vmin = median - sigma * std_estimate
+        vmax = median + sigma * std_estimate
+    else:  # minmax
+        vmin, vmax = data_clean.min(), data_clean.max()
+
+    # Ensure symmetric for diverging colormaps
+    abs_max = max(abs(vmin), abs(vmax))
+    return -abs_max, abs_max
+
+
+def get_fig_aspect_ratio(data: dict, clamp_low: float = 0.3, clamp_high: float = 5.0) -> float:
+    """Return physical domain aspect ratio (dx/dy) with reasonable clamping for figure sizing.
+
+    Computes aspect from physical extent if coordinates available, otherwise from Nx/Ny.
+    Clamps to [0.3, 5.0] to avoid extremely distorted figures while preserving physical proportions.
+    """
+    x_coords = data.get("x")
+    y_coords = data.get("y")
+
+    # Try to compute from physical extent first
+    if x_coords is not None and y_coords is not None:
+        try:
+            x_arr = np.asarray(x_coords)
+            y_arr = np.asarray(y_coords)
+            dx = float(x_arr.max() - x_arr.min())
+            dy = float(y_arr.max() - y_arr.min())
+            if dx > 0 and dy > 0:
+                aspect = dx / dy
+                return max(clamp_low, min(aspect, clamp_high))
+        except (ValueError, TypeError):
+            pass
+
+    # Fall back to grid point ratio
     nx = int(data.get("Nx", 1))
     ny = int(data.get("Ny", 1))
     if ny <= 0:

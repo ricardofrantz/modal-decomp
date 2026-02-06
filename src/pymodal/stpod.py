@@ -28,6 +28,7 @@ from typing import Optional
 
 import h5py
 import matplotlib
+from scipy.sparse.linalg import svds
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -116,6 +117,9 @@ class STPODAnalyzer(BaseAnalyzer):
     def _build_hankel_matrix(self, data_centered: np.ndarray) -> np.ndarray:
         """Build the block Hankel matrix from centered data.
 
+        Uses vectorized indexing: each column j of H is the stack of rows
+        j, j+1, ..., j+d-1 from data_centered, reshaped into a single vector.
+
         Args:
             data_centered: Mean-subtracted data, shape (Ns, Nspace).
 
@@ -126,11 +130,12 @@ class STPODAnalyzer(BaseAnalyzer):
         d = self.embedding_dim
         m = Ns - d + 1
 
-        H = np.zeros((d * Nspace, m), dtype=np.float64)
-        for j in range(m):
-            for k in range(d):
-                H[k * Nspace : (k + 1) * Nspace, j] = data_centered[j + k, :]
-        return H
+        # Build index array: col_idx[k, j] = j + k → row of data for block k, column j
+        col_idx = np.arange(m)[np.newaxis, :] + np.arange(d)[:, np.newaxis]  # (d, m)
+        # Gather: (d, m, Nspace) → transpose to (d, Nspace, m) → reshape to (d*Nspace, m)
+        # Transpose is needed so spatial indices stay contiguous within each block.
+        H = data_centered[col_idx].transpose(0, 2, 1).reshape(d * Nspace, m)
+        return np.ascontiguousarray(H)
 
     def _get_weight_vector(self, num_space_points: int) -> np.ndarray:
         """Extract weight vector from self.W, handling various shapes."""
@@ -145,28 +150,6 @@ class STPODAnalyzer(BaseAnalyzer):
             else:
                 raise ValueError(f"Unexpected weight shape: {self.W.shape}")
         return self.W
-
-    def _apply_spatiotemporal_weights(
-        self, H: np.ndarray, weight_vector: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Apply sqrt(W) to each d-block of the Hankel matrix.
-
-        Args:
-            H: Block Hankel matrix, shape (d * Nspace, m).
-            weight_vector: Spatial weights, shape (Nspace,).
-
-        Returns:
-            H_weighted: Weighted Hankel matrix.
-            sqrt_weights_extended: Extended sqrt weights for unweighting.
-        """
-        d = self.embedding_dim
-        Nspace = len(weight_vector)
-
-        sqrt_weights = np.sqrt(np.maximum(weight_vector, 1e-12))
-        sqrt_weights_extended = np.tile(sqrt_weights, d)
-
-        H_weighted = H * sqrt_weights_extended[:, np.newaxis]
-        return H_weighted, sqrt_weights_extended
 
     def _unweight_modes(
         self, U_weighted: np.ndarray, sqrt_weights_extended: np.ndarray
@@ -221,33 +204,45 @@ class STPODAnalyzer(BaseAnalyzer):
         # 2. Build Hankel matrix
         H = self._build_hankel_matrix(data_centered)
 
-        # 3. Apply weights
+        # 3. Apply weights in-place
         weight_vector = self._get_weight_vector(Nspace)
-        H_weighted, sqrt_weights_extended = self._apply_spatiotemporal_weights(
-            H, weight_vector
-        )
+        sqrt_weights = np.sqrt(np.maximum(weight_vector, 1e-12))
+        sqrt_weights_extended = np.tile(sqrt_weights, self.embedding_dim)
+        H *= sqrt_weights_extended[:, np.newaxis]  # in-place weighting
 
-        # 4. SVD
-        # For large matrices, use randomized SVD or truncated SVD if available
-        # For now, use full SVD and truncate
-        U, sigma, Vt = np.linalg.svd(H_weighted, full_matrices=False)
+        # 4. SVD — use truncated (ARPACK) for large matrices, full for small ones
+        n_min = min(H.shape)
+        k = min(self.n_modes_save, n_min - 1)
+        if k < self.n_modes_save:
+            print(f"Warning: Only {k} modes available, requested {self.n_modes_save}")
+            self.n_modes_save = k
 
-        # 5. Truncate to n_modes_save
-        n_available = min(len(sigma), self.n_modes_save)
-        if n_available < self.n_modes_save:
-            print(f"Warning: Only {n_available} modes available, requested {self.n_modes_save}")
-            self.n_modes_save = n_available
+        # Truncated SVD saves massive time for large matrices but ARPACK is
+        # inaccurate for near-zero trailing singular values on small matrices.
+        # Threshold: full SVD is fast enough when min(shape) is small.
+        if n_min <= 1000:
+            U_full, sigma_full, Vt_full = np.linalg.svd(H, full_matrices=False)
+            sigma = sigma_full[:k]
+            U = U_full[:, :k]
+            Vt = Vt_full[:k, :]
+        else:
+            U, sigma, Vt = svds(H, k=k)
+            # svds returns singular values in ascending order — reverse to descending
+            idx = np.argsort(sigma)[::-1]
+            sigma = sigma[idx]
+            U = U[:, idx]
+            Vt = Vt[idx, :]
 
-        self.eigenvalues = sigma[:self.n_modes_save] ** 2
-        U_truncated = U[:, :self.n_modes_save]
-        Vt_truncated = Vt[:self.n_modes_save, :]
-        sigma_truncated = sigma[:self.n_modes_save]
+        del H  # free Hankel memory
+
+        # 5. Store results
+        self.eigenvalues = sigma ** 2
 
         # 6. Unweight modes
-        self.modes = self._unweight_modes(U_truncated, sqrt_weights_extended)
+        self.modes = self._unweight_modes(U, sqrt_weights_extended)
 
         # 7. Time coefficients: scale Vt by sigma
-        self.time_coefficients = (Vt_truncated * sigma_truncated[:, np.newaxis]).T
+        self.time_coefficients = (Vt * sigma[:, np.newaxis]).T
 
         # Ensure real values
         self.modes = np.real(self.modes)
@@ -464,8 +459,9 @@ class STPODAnalyzer(BaseAnalyzer):
             else:
                 mode_plot = mode_2d
 
-            vmax = np.max(np.abs(mode_plot))
-            levels = np.linspace(-vmax, vmax, 21)
+            from pymodal.core.base import get_robust_clim
+            vmin, vmax = get_robust_clim(mode_plot, method="percentile")
+            levels = np.linspace(vmin, vmax, 21)
 
             cf = ax.contourf(x_mesh, y_mesh, mode_plot, levels=levels, cmap=CMAP_DIV, extend="both")
 
@@ -665,6 +661,11 @@ class STPODAnalyzer(BaseAnalyzer):
                     axes[i, 1].text(pf, pv, f" {pf:.2f}", fontsize=8, ha="left", va="bottom")
 
             axes[i, 1].set_xscale("log")
+            # Fit y-limits: show 6 decades below peak
+            psd_pos = psd[psd > 0]
+            if len(psd_pos) > 0:
+                ymax = psd_pos.max() * 3
+                axes[i, 1].set_ylim(ymax * 1e-6, ymax)
             axes[i, 1].set_xlabel("Strouhal Number (St)")
             axes[i, 1].set_ylabel("PSD")
             axes[i, 1].set_title(f"Periodogram Mode {i + 1}")
@@ -728,9 +729,9 @@ class STPODAnalyzer(BaseAnalyzer):
 
         weight_vector = self._get_weight_vector(Nspace)
         W_extended = np.tile(weight_vector, self.embedding_dim)
-        W_diag = np.diag(W_extended)
 
-        gram = self.modes.T @ W_diag @ self.modes
+        # Element-wise multiply instead of forming dense (d*Nspace)² diagonal matrix
+        gram = self.modes.T @ (W_extended[:, np.newaxis] * self.modes)
         identity = np.eye(n_modes)
 
         diag_dev = np.max(np.abs(np.diag(gram) - 1.0))
