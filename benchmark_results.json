@@ -1,0 +1,22 @@
+[
+  {
+    "case": "cavity",
+    "method": "stpod",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 0.026562861166894436,
+    "time_compute": 1.1379913329146802,
+    "time_total": 10.549418583977968,
+    "n_snapshots": 4000,
+    "n_spatial": 260,
+    "n_modes": 10,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated",
+      "generated",
+      "generated",
+      "generated"
+    ]
+  }
+]
