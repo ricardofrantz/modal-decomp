@@ -25,6 +25,7 @@ import argparse
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
 import h5py
@@ -32,12 +33,12 @@ import matplotlib.pyplot as plt
 
 # Third-party imports
 import numpy as np
-from scipy.sparse import linalg as splinalg
 from tqdm import tqdm
 
 from pymodal.core.config import (
     CMAP_DIV,
     CMAP_SEQ,
+    FIG_DPI,
     FIGURES_DIR_BSMD,
     RESULTS_DIR_BSMD,
     RESULTS_DIR_SPOD,
@@ -46,7 +47,6 @@ from pymodal.core.parallel import print_optimization_status
 from pymodal.core.base import (
     BaseAnalyzer,
     get_fig_aspect_ratio,
-    get_num_threads,
     load_jetles_data,
     load_mat_data,
     make_result_filename,
@@ -58,13 +58,6 @@ try:
     from pymodal.core.io import DNamiXNPZLoader
 except ImportError:
     DNamiXNPZLoader = None
-
-
-def find_closest_freq_idx(freq_array, target):
-    """Return the index of the closest value in freq_array to target. Returns None if freq_array is empty or None."""
-    if freq_array is None or len(freq_array) == 0:
-        return None
-    return int(np.argmin(np.abs(freq_array - target)))
 
 
 # Standard static triad list
@@ -176,7 +169,7 @@ class BSMDAnalyzer(BaseAnalyzer):
                       and preprocessing.
     """
 
-    def __init__(self, file_path, nfft=128, overlap=0.5, results_dir=RESULTS_DIR_BSMD, figures_dir=FIGURES_DIR_BSMD, data_loader=None, spatial_weight_type="auto", use_static_triads=True, static_triads=ALL_TRIADS, use_parallel=True):
+    def __init__(self, file_path, nfft=128, overlap=0.5, results_dir=RESULTS_DIR_BSMD, figures_dir=FIGURES_DIR_BSMD, data_loader=None, spatial_weight_type="auto", use_static_triads=True, static_triads=ALL_TRIADS, use_parallel=True, max_qhat_gb=4.0):
         """
         Initialize the BSMDAnalyzer.
 
@@ -201,6 +194,9 @@ class BSMDAnalyzer(BaseAnalyzer):
                                                 would be attempted. Defaults to True.
             static_triads (list of tuples, optional): List of predefined frequency index triads (p_k, p_l, p_k+p_l)
                                                      to analyze. Defaults to `ALL_TRIADS` from this module.
+            max_qhat_gb (float, optional): Maximum qhat size (GB) to keep in RAM.
+                                           Larger arrays are offloaded to HDF5 and served
+                                           slice-by-slice during BSMD.  Defaults to 4.0.
         """
         super().__init__(
             file_path=file_path,
@@ -215,13 +211,6 @@ class BSMDAnalyzer(BaseAnalyzer):
         self.use_static_triads = use_static_triads
         self.static_triads_list = static_triads if use_static_triads else []
         self.analysis_type = "bsmd"
-
-        # BSMD specific attributes
-        self.modes1 = np.array([])  # BSMD spatial modes (interaction product)
-        self.modes2 = np.array([])  # BSMD spatial modes (third frequency)
-        self.eigenvalues = np.array([])  # BSMD eigenvalues
-        self.triads = np.array([])  # Triads (f_alpha, f_beta, f_gamma)
-        self.freq_alpha_idx = np.array([], dtype=int)
 
         # Ensure output directories exist
         os.makedirs(self.results_dir, exist_ok=True)
@@ -240,11 +229,84 @@ class BSMDAnalyzer(BaseAnalyzer):
         self.qhat = np.array([])
         self.qhat_cached = False
         self.triads = []
+        self.eigenvalues = np.array([])
         self.modes1 = np.array([])
         self.modes2 = np.array([])
         self.freq = None
         self.St = None
         self.energy_map = np.array([])
+
+        # Disk-backed qhat for large datasets
+        self._max_qhat_bytes = int(max_qhat_gb * 1024**3)
+        self._qhat_file = None       # h5py File handle (kept open in disk mode)
+        self._qhat_dataset = None    # h5py Dataset reference
+        self._qhat_on_disk = False
+        self._qhat_bin_cache = {}    # {abs_freq_bin: np.ndarray}
+        self._qhat_cache_path = None
+
+    # -- Disk-backed qhat management -----------------------------------------
+
+    def _maybe_offload_qhat(self):
+        """If qhat exceeds the memory threshold, offload to HDF5 and free RAM.
+
+        After this call, ``self.qhat`` is an empty array and all frequency-bin
+        access goes through ``self._qhat_dataset`` (an open h5py Dataset).
+        """
+        if self._qhat_on_disk or self.qhat.size == 0:
+            return
+        if self.qhat.nbytes <= self._max_qhat_bytes:
+            return
+
+        cache_path = self._qhat_cache_path
+        if cache_path is None or not os.path.exists(cache_path):
+            return  # No cache file to back onto
+
+        qhat_gb = self.qhat.nbytes / 1024**3
+        print(f"qhat is {qhat_gb:.1f} GB (threshold {self._max_qhat_bytes / 1024**3:.1f} GB) "
+              f"— switching to disk-backed mode.")
+        self._qhat_file = h5py.File(cache_path, "r")
+        self._qhat_dataset = self._qhat_file["FFTBlocks"]
+        self._qhat_on_disk = True
+        self.qhat = np.array([])  # release RAM
+
+    def _prefetch_bins(self):
+        """Pre-load all frequency bins needed by the triad list into the cache.
+
+        In disk-backed mode this reads each unique bin from HDF5 exactly once,
+        *before* threads are spawned, so the parallel loop never touches h5py.
+        In RAM mode this is a no-op.
+        """
+        if not self._qhat_on_disk:
+            return
+        needed = set()
+        for p1, p2, p3 in self.static_triads_list:
+            needed.update([abs(p1), abs(p2), abs(p3)])
+        to_read = sorted(needed - set(self._qhat_bin_cache))
+        if not to_read:
+            return
+        for bin_idx in to_read:
+            if bin_idx < self._qhat_dataset.shape[0]:
+                self._qhat_bin_cache[bin_idx] = self._qhat_dataset[bin_idx, :, :]
+        total_mb = sum(v.nbytes for v in self._qhat_bin_cache.values()) / 1024**2
+        print(f"Pre-fetched {len(to_read)} frequency bins ({total_mb:.0f} MB) "
+              f"for {len(self.static_triads_list)} triads.")
+
+    def close(self):
+        """Release disk-backed resources (HDF5 file handle, bin cache)."""
+        self._qhat_bin_cache.clear()
+        if self._qhat_file is not None:
+            self._qhat_file.close()
+            self._qhat_file = None
+            self._qhat_dataset = None
+            self._qhat_on_disk = False
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass  # best-effort cleanup during GC
+
+    # -- Data loading --------------------------------------------------------
 
     def load_and_preprocess(self):
         """
@@ -283,6 +345,7 @@ class BSMDAnalyzer(BaseAnalyzer):
             self.analysis_type,
         )
         cache_path = os.path.join(self.results_dir, fname_bsmd)
+        self._qhat_cache_path = cache_path
 
         # Try loading cached FFT blocks from a previous BSMD run first
         if os.path.exists(cache_path):
@@ -295,7 +358,8 @@ class BSMDAnalyzer(BaseAnalyzer):
                         self.qhat_cached = True
                         print(f"Loaded cached FFT blocks from {cache_path}")
                         self.freq = np.fft.rfftfreq(self.nfft, d=1.0 / self.fs)
-                        self.St = self.freq
+                        self.St = self.freq.copy()
+                        self._maybe_offload_qhat()
                         return
 
         # Otherwise, see if SPOD cached blocks exist to reuse
@@ -328,7 +392,8 @@ class BSMDAnalyzer(BaseAnalyzer):
                                     f_bsmd.attrs[key] = value
                         print(f"Saved FFT blocks to cache at {cache_path}")
                         self.freq = np.fft.rfftfreq(self.nfft, d=1.0 / self.fs)
-                        self.St = self.freq
+                        self.St = self.freq.copy()
+                        self._maybe_offload_qhat()
                         return
 
         # If no cache available, compute and save
@@ -348,7 +413,8 @@ class BSMDAnalyzer(BaseAnalyzer):
 
         # Set frequency and Strouhal vectors after qhat is available
         self.freq = np.fft.rfftfreq(self.nfft, d=1.0 / self.fs)
-        self.St = self.freq  # Default: Strouhal equals frequency if no scaling
+        self.St = self.freq.copy()  # Default: Strouhal equals frequency if no scaling
+        self._maybe_offload_qhat()
 
     # Main method to perform BSMD analysis based on configuration.
     def perform_bsmd(self):
@@ -361,8 +427,8 @@ class BSMDAnalyzer(BaseAnalyzer):
 
         Ensures data is loaded and preprocessed (STFT computed) before proceeding.
         """
-        if self.qhat.size == 0:
-            print("STFT data (qhat) not found. Running load_and_preprocess...")
+        if self.qhat.size == 0 and not self._qhat_on_disk:
+            print("STFT data (qhat) not found. Call load_and_preprocess() first.")
         start_time = time.time()
         print("Starting BSMD analysis...")
 
@@ -379,26 +445,108 @@ class BSMDAnalyzer(BaseAnalyzer):
 
         print(f"BSMD analysis completed in {time.time() - start_time:.2f} seconds.")
 
+    @property
+    def _n_freq_bins(self) -> int:
+        """Number of frequency bins, whether qhat is in RAM or on disk."""
+        if self._qhat_on_disk:
+            return self._qhat_dataset.shape[0]
+        return self.qhat.shape[0]
+
+    @property
+    def _n_spatial(self) -> int:
+        """Number of spatial points, whether qhat is in RAM or on disk."""
+        if self._qhat_on_disk:
+            return self._qhat_dataset.shape[1]
+        return self.qhat.shape[1]
+
+    def _get_qhat_for_index(self, idx: int) -> np.ndarray:
+        """Return qhat slice for a frequency bin index, handling negatives via conjugate symmetry.
+
+        For real-valued signals the DFT satisfies X(-k) = conj(X(k)).
+        Since ``self.qhat`` stores only non-negative frequency bins (rfftfreq),
+        negative indices are served by conjugating the corresponding positive bin.
+
+        In disk-backed mode, slices are read from HDF5 and cached in
+        ``self._qhat_bin_cache`` so each physical bin is read at most once.
+
+        Args:
+            idx: Integer frequency bin index (can be negative).
+
+        Returns:
+            Array of shape ``(Nspace, Nblocks)``.
+
+        Raises:
+            IndexError: If ``|idx|`` exceeds the number of available frequency bins.
+        """
+        n_freq_bins = self._n_freq_bins
+        abs_idx = abs(idx)
+        if abs_idx >= n_freq_bins:
+            raise IndexError(
+                f"Frequency bin index {idx} out of range "
+                f"[{-(n_freq_bins - 1)}, {n_freq_bins - 1}]"
+            )
+
+        # Fetch the positive-frequency slice (from cache, disk, or RAM)
+        if abs_idx in self._qhat_bin_cache:
+            data = self._qhat_bin_cache[abs_idx]
+        elif self._qhat_on_disk:
+            data = self._qhat_dataset[abs_idx, :, :]
+            self._qhat_bin_cache[abs_idx] = data
+        else:
+            data = self.qhat[abs_idx, :, :]
+
+        return np.conj(data) if idx < 0 else data
+
+    def _compute_single_triad(self, p1: int, p2: int, p3: int):
+        """Compute BSMD eigenvalue and spatial modes for one triad.
+
+        Thread-safe: reads from shared ``self.qhat`` and ``self.W`` (read-only),
+        all outputs are returned as local values.
+
+        Returns:
+            (eigenvalue, mode1, mode2) on success, or (np.nan, None, None) on
+            failure (constraint violation, out-of-range index, singular matrix).
+        """
+        if p1 + p2 != p3:
+            return np.nan, None, None
+
+        try:
+            Q1 = self._get_qhat_for_index(p1)  # (Nspace, Nblocks)
+            Q2 = self._get_qhat_for_index(p2)
+            Q3 = self._get_qhat_for_index(p3)
+        except IndexError:
+            return np.nan, None, None
+
+        nblocks = Q1.shape[1]
+        if nblocks == 0:
+            return np.nan, None, None
+
+        # Schmidt (2020) formulation with one fewer temporary:
+        #   prod = Q1 * Q2            (= conj(A), avoids allocating A separately)
+        #   C = prod^T @ diag(W) @ Q3 / Nblk   (≡ A^H @ diag(W) @ B / Nblk)
+        prod = Q1 * Q2                              # (Nspace, Nblocks)
+        C = (prod.T @ (self.W * Q3)) / nblocks      # (Nblocks, Nblocks)
+
+        try:
+            eigvals, eigvecs = np.linalg.eig(C)
+            dom = np.argmax(np.abs(eigvals))
+            a = eigvecs[:, dom]
+
+            mode1 = Q3 @ np.conj(a)          # Φ1 = B @ conj(a)
+            mode2 = np.conj(prod @ a)         # Φ2 = conj(prod @ a) = A @ conj(a)
+            return eigvals[dom], mode1, mode2
+        except np.linalg.LinAlgError:
+            return np.nan, None, None
+
     # Core logic for BSMD with statically defined triads.
     def _perform_static_bsmd_core(self):
         """
         Perform BSMD for a statically defined list of frequency triads.
 
-        This is the core computational part of BSMD when `self.use_static_triads` is True.
-        It iterates through `self.static_triads_list` and for each triad:
-        1. Extracts frequency indices (p1, p2, p3).
-        2. Forms auxiliary matrices A_jb and B_jb from `self.qhat`.
-        3. Constructs the bispectral correlation matrix C_bb' using `self.W` for spatial weighting.
-        4. Solves the eigenvalue problem C a = lambda a. The dominant eigenvalue and corresponding
-           eigenvector are typically selected.
-        5. Reconstructs the spatial BSMD modes modes1 and modes2.
-
-        Attributes set/appended:
-            eigenvalues (list): Appends the dominant BSMD eigenvalue for each triad.
-            modes1 (list of np.ndarray): Appends the BSMD mode modes1 for each triad.
-            modes2 (list of np.ndarray): Appends the BSMD mode modes2 for each triad.
-            triads (list of tuples): Stores the (p1, p2, p3) triad being processed.
-        Finally, these lists are converted to numpy arrays.
+        When ``self.use_parallel`` is True, triads are processed concurrently
+        using a thread pool.  NumPy releases the GIL during BLAS calls, and
+        Python 3.14+ free-threading removes it entirely, so threads give
+        near-linear speedup for the matmul-dominated inner loop.
         """
         print("Performing static BSMD core analysis...")
         start_time = time.time()
@@ -410,98 +558,53 @@ class BSMDAnalyzer(BaseAnalyzer):
             self.triads = np.array([])
             return
 
-        print(f"Using {len(self.static_triads_list)} statically defined triads.")
-        # Initialize result arrays based on the number of static triads
         num_triads = len(self.static_triads_list)
-        Nspace = self.qhat.shape[1]  # Number of spatial points
+        Nspace = self._n_spatial
+        print(f"Using {num_triads} statically defined triads ({Nspace} spatial points).")
 
         self.modes1 = np.zeros((num_triads, Nspace), dtype=complex)
         self.modes2 = np.zeros((num_triads, Nspace), dtype=complex)
-        self.eigenvalues = np.zeros(num_triads, dtype=float)  # Eigenvalues are real
-        self.triads = np.array(self.static_triads_list)  # Store the used triads
+        self.eigenvalues = np.zeros(num_triads, dtype=complex)
+        self.triads = np.array(self.static_triads_list)
 
-        # Map target Strouhal numbers to frequency indices
-        # self.freq and self.St should be available from BaseAnalyzer.load_and_preprocess_data
-        # Robustly recalculate self.freq and self.St if needed (handles cases where not set or mismatched)
-        if self.freq is None or self.St is None or (hasattr(self.qhat, "shape") and self.qhat.shape and ((not hasattr(self.freq, "size") or self.freq.size != self.qhat.shape[0]) or (not hasattr(self.St, "size") or self.St.size != self.qhat.shape[0]))):
-            print("Recalculating frequency and Strouhal arrays to match qhat...")
-            nfft = self.qhat.shape[0] if hasattr(self.qhat, "shape") and len(self.qhat.shape) > 0 else 0
-            if nfft > 0:
-                self.freq = np.fft.rfftfreq(nfft * 2 - 2, d=1.0 / self.fs)[:nfft]
-                # If Strouhal number is used, recalculate accordingly
-                if hasattr(self, "D") and hasattr(self, "U_inf") and self.D and self.U_inf:
-                    self.St = self.freq * self.D / self.U_inf
-                else:
-                    self.St = self.freq.copy()
+        # Ensure freq/St arrays are set (needed for post-analysis plotting, not for the core loop)
+        if self.freq is None or self.St is None:
+            n_freq = self._n_freq_bins
+            if n_freq > 0:
+                self.freq = np.fft.rfftfreq(n_freq * 2 - 2, d=1.0 / self.fs)[:n_freq]
+                self.St = self.freq.copy()
+
+        # Pre-fetch frequency bins from HDF5 into RAM cache before threading.
+        # In disk-backed mode this avoids h5py reads inside threads (not thread-safe).
+        # In RAM mode this is a no-op.
+        self._prefetch_bins()
+
+        def _store_result(i, lam, m1, m2):
+            """Write one triad's results into the pre-allocated arrays."""
+            self.eigenvalues[i] = lam
+            if m1 is not None:
+                self.modes1[i, :] = m1
+                self.modes2[i, :] = m2
             else:
-                self.freq = np.array([])
-                self.St = np.array([])
-
-        if self.freq is None or self.St is None or self.freq.size == 0 or self.St.size == 0:
-            print("Error: Frequency/Strouhal information not available. Cannot map triads.")
-            return
-
-        for i, (st_alpha_target, st_beta_target, st_gamma_target) in enumerate(tqdm(self.static_triads_list, desc="BSMD Triads")):
-            idx_alpha = find_closest_freq_idx(self.St, st_alpha_target)
-            idx_beta = find_closest_freq_idx(self.St, st_beta_target)
-            idx_gamma = find_closest_freq_idx(self.St, st_gamma_target)
-
-            if idx_alpha is None or idx_beta is None or idx_gamma is None:
-                print(f"Warning: Could not find matching frequencies for triad St=({st_alpha_target},{st_beta_target},{st_gamma_target}). Skipping.")
-                # Set corresponding results to NaN or handle as appropriate
-                self.eigenvalues[i] = np.nan
                 self.modes1[i, :] = np.nan
                 self.modes2[i, :] = np.nan
-                continue
 
-            # Extract FFT data for the triad frequencies
-            Q_alpha = self.qhat[idx_alpha, :, :]  # (Nspace, Nblocks)
-            Q_beta = self.qhat[idx_beta, :, :]  # (Nspace, Nblocks)
-            Q_gamma = self.qhat[idx_gamma, :, :]  # (Nspace, Nblocks)
-
-            # Compute bispectral tensor B_alpha_beta (Schmidt decomposition)
-            # B_ab = Q_alpha @ Q_beta.conj().T / Nblocks (example formulation)
-            # For BSMD, a more specific formulation is used, often involving Q_gamma
-            # Example from Towne et al. (2017) JFM, Eq. (3.4)
-            # B_ij = sum_k (Q_alpha_ik * Q_beta_jk * Q_gamma_conjugate_sumfreq_k) / Nblocks^2
-            # Here, we need a simplified approach or a direct call to a bmsd_core_function
-
-            # Placeholder for actual BSMD core computation for a single triad
-            # This would involve forming the bispectral density tensor and performing SVD
-            # For now, let's assume a simplified SVD on a product of Q_alpha and Q_beta
-            # This is NOT the full BSMD, just a placeholder SVD.
-            if Q_alpha.shape[1] == 0 or Q_beta.shape[1] == 0:  # Nblocks is 0
-                print(f"Warning: Zero blocks for triad {i}. Skipping.")
-                self.eigenvalues[i] = np.nan
-                self.modes1[i, :] = np.nan
-                self.modes2[i, :] = np.nan
-                continue
-
-            nblocks = Q_alpha.shape[1]
-
-            def matvec(v):
-                return Q_alpha @ (Q_beta.conj().T @ v) / nblocks
-
-            def rmatvec(v):
-                return Q_beta @ (Q_alpha.conj().T @ v) / nblocks
-
-            op = splinalg.LinearOperator(
-                shape=(Q_alpha.shape[0], Q_alpha.shape[0]),
-                matvec=matvec,
-                rmatvec=rmatvec,
-                dtype=np.complex128,
-            )
-
-            try:
-                u, s, vh = splinalg.svds(op, k=1)
-                self.modes1[i, :] = u[:, 0]
-                self.modes2[i, :] = vh[0, :].conj()
-                self.eigenvalues[i] = s[0]
-            except Exception as e:
-                print(f"SVD failed for triad {i} (St={st_alpha_target},{st_beta_target},{st_gamma_target}): {e}")
-                self.eigenvalues[i] = np.nan
-                self.modes1[i, :] = np.nan
-                self.modes2[i, :] = np.nan
+        if self.use_parallel:
+            n_workers = min(num_triads, os.cpu_count() or 1)
+            print(f"Thread-parallel BSMD with {n_workers} workers.")
+            with ThreadPoolExecutor(max_workers=n_workers) as pool:
+                futures = {
+                    pool.submit(self._compute_single_triad, p1, p2, p3): i
+                    for i, (p1, p2, p3) in enumerate(self.static_triads_list)
+                }
+                for future in tqdm(as_completed(futures), total=num_triads, desc="BSMD Triads"):
+                    i = futures[future]
+                    lam, m1, m2 = future.result()
+                    _store_result(i, lam, m1, m2)
+        else:
+            for i, (p1, p2, p3) in enumerate(tqdm(self.static_triads_list, desc="BSMD Triads")):
+                lam, m1, m2 = self._compute_single_triad(p1, p2, p3)
+                _store_result(i, lam, m1, m2)
 
         print(f"Static BSMD core analysis completed in {time.time() - start_time:.2f} seconds.")
 
@@ -587,7 +690,11 @@ class BSMDAnalyzer(BaseAnalyzer):
 
         if triad_indices is None:
             lambdas = np.abs(self.eigenvalues)
-            triad_indices = list(np.argsort(lambdas)[::-1])
+            valid = ~np.isnan(lambdas)
+            triad_indices = list(np.argsort(lambdas[valid])[::-1])
+            # Map back to original indices (skip NaN triads)
+            valid_idx = np.where(valid)[0]
+            triad_indices = [int(valid_idx[k]) for k in triad_indices]
         if plot_n_modes is not None:
             triad_indices = triad_indices[:plot_n_modes]
 
@@ -597,95 +704,73 @@ class BSMDAnalyzer(BaseAnalyzer):
         y_coords = self.data.get("y", np.arange(ny))
         fig_aspect = get_fig_aspect_ratio(self.data)
         var_name = self.data.get("metadata", {}).get("var_name", "q")
-        extent = (
-            x_coords.min(),
-            x_coords.max(),
-            y_coords.min(),
-            y_coords.max(),
-        )
+
+        # Pre-compute mesh once (outside the loop)
+        if x_coords.ndim == 1 and y_coords.ndim == 1:
+            x_mesh, y_mesh = np.meshgrid(x_coords, y_coords, indexing="ij")
+        else:
+            x_mesh, y_mesh = x_coords, y_coords
+
+        # Figure sizing: wide domains → side-by-side, tall/square → stacked
+        # Each panel's plot area targets ~5" on its long side; the colorbar
+        # and labels add ~1.5" per panel.
+        if fig_aspect >= 2.0:
+            # Wide domain (e.g. cavity): 1×2 layout, height from aspect
+            nrows, ncols = 1, 2
+            plot_w = 6.0
+            plot_h = max(plot_w / fig_aspect, 2.5)
+            fig_w = 2 * (plot_w + 1.5)
+            fig_h = plot_h + 1.5
+        else:
+            # Square-ish or tall domain (e.g. jet): 2×1 layout for bigger panels
+            nrows, ncols = 2, 1
+            plot_w = 7.0
+            plot_h = plot_w / fig_aspect
+            fig_w = plot_w + 2.0
+            fig_h = 2 * plot_h + 2.0
 
         for idx in triad_indices:
-            # Reshape mode vectors into the spatial grid.  No transpose is
-            # required here because ``x`` and ``y`` coordinates are assumed to
-            # follow the same (Nx, Ny) ordering as the stored modes.  The
-            # previous transpose caused a mismatch when the coordinates were
-            # provided as full 2D arrays.
             mode1 = self.modes1[idx, :].real.reshape(nx, ny)
             mode2 = self.modes2[idx, :].real.reshape(nx, ny)
-            triad = self.triads[idx]
+            triad = tuple(int(v) for v in self.triads[idx])
+            lam = self.eigenvalues[idx]
 
-            if x_coords.ndim == 1 and y_coords.ndim == 1:
-                x_mesh, y_mesh = np.meshgrid(x_coords, y_coords, indexing="ij")
-            else:
-                x_mesh, y_mesh = x_coords, y_coords
-            dist = np.sqrt(x_mesh**2 + y_mesh**2)
-            cylinder_mask = dist <= 0.5
-
-            fig, axes = plt.subplots(1, 2, figsize=(8 * fig_aspect, 4))
-
-            field1 = np.ma.array(mode1, mask=cylinder_mask)
-            vmax1 = np.max(np.abs(field1))
-            levels1 = np.linspace(-vmax1, vmax1, 21)
-            cf1 = axes[0].contourf(
-                x_mesh,
-                y_mesh,
-                field1,
-                levels=levels1,
-                cmap=CMAP_DIV,
-                extend="both",
+            fig, axes = plt.subplots(
+                nrows, ncols, figsize=(fig_w, fig_h),
+                constrained_layout=True,
             )
-            axes[0].contour(
-                x_mesh,
-                y_mesh,
-                field1,
-                levels=levels1[::4],
-                colors="k",
-                linewidths=0.5,
-                alpha=0.5,
+            axes = np.atleast_1d(axes)
+            fig.suptitle(
+                f"Triad ({triad[0]}, {triad[1]}, {triad[2]})   "
+                rf"$|\lambda|$ = {np.abs(lam):.3e}",
+                fontsize=12,
             )
-            axes[0].add_patch(plt.Circle((0, 0), 0.5, facecolor="lightgray", edgecolor="black", linewidth=0.5))
-            axes[0].set_title(f"Triad {tuple(triad)} Phi1 [{var_name}]")
-            axes[0].set_xlabel(r"$x/D$")
-            axes[0].set_ylabel(r"$y/D$")
-            axes[0].set_aspect("equal", "box")
-            axes[0].set_xlim(x_coords.min(), x_coords.max())
-            axes[0].set_ylim(y_coords.min(), y_coords.max())
-            axes[0].grid(True, linestyle="--", alpha=0.3)
-            fig.colorbar(cf1, ax=axes[0], shrink=0.8)
 
-            field2 = np.ma.array(mode2, mask=cylinder_mask)
-            vmax2 = np.max(np.abs(field2))
-            levels2 = np.linspace(-vmax2, vmax2, 21)
-            cf2 = axes[1].contourf(
-                x_mesh,
-                y_mesh,
-                field2,
-                levels=levels2,
-                cmap=CMAP_DIV,
-                extend="both",
-            )
-            axes[1].contour(
-                x_mesh,
-                y_mesh,
-                field2,
-                levels=levels2[::4],
-                colors="k",
-                linewidths=0.5,
-                alpha=0.5,
-            )
-            axes[1].add_patch(plt.Circle((0, 0), 0.5, facecolor="lightgray", edgecolor="black", linewidth=0.5))
-            axes[1].set_title(f"Triad {tuple(triad)} Phi2 [{var_name}]")
-            axes[1].set_xlabel(r"$x/D$")
-            axes[1].set_ylabel(r"$y/D$")
-            axes[1].set_aspect("equal", "box")
-            axes[1].set_xlim(x_coords.min(), x_coords.max())
-            axes[1].set_ylim(y_coords.min(), y_coords.max())
-            axes[1].grid(True, linestyle="--", alpha=0.3)
-            fig.colorbar(cf2, ax=axes[1], shrink=0.8)
+            for ax, mode, label in [(axes[0], mode1, r"$\Phi_1$"),
+                                     (axes[1], mode2, r"$\Phi_2$")]:
+                vmax = np.max(np.abs(mode))
+                if vmax == 0:
+                    vmax = 1.0
+                levels = np.linspace(-vmax, vmax, 21)
+                cf = ax.contourf(
+                    x_mesh, y_mesh, mode,
+                    levels=levels, cmap=CMAP_DIV, extend="both",
+                )
+                ax.contour(
+                    x_mesh, y_mesh, mode,
+                    levels=levels[::4], colors="k", linewidths=0.5, alpha=0.5,
+                )
+                ax.set_title(f"{label} [{var_name}]")
+                ax.set_xlabel(r"$x/D$")
+                ax.set_ylabel(r"$y/D$")
+                ax.set_aspect("equal", "box")
+                ax.set_xlim(x_coords.min(), x_coords.max())
+                ax.set_ylim(y_coords.min(), y_coords.max())
+                ax.grid(True, linestyle="--", alpha=0.3)
+                fig.colorbar(cf, ax=ax, shrink=0.8)
 
-            fig.tight_layout()
             fname = os.path.join(self.figures_dir, f"{self.data_root}_BSMD_triad{idx}_{var_name}.png")
-            plt.savefig(fname)
+            plt.savefig(fname, dpi=FIG_DPI)
             plt.close(fig)
             print(f"BSMD mode plot saved to {fname}")
 
@@ -704,13 +789,13 @@ class BSMDAnalyzer(BaseAnalyzer):
             cmap=CMAP_SEQ,
             aspect="equal",
         )
-        ax.set_xlabel("p1 index")
-        ax.set_ylabel("p2 index")
+        ax.set_xlabel("p2 index")
+        ax.set_ylabel("p1 index")
         ax.set_title("BSMD energy map |lambda|")
         fig.colorbar(im, ax=ax, shrink=0.8)
         fig.tight_layout()
         fname = os.path.join(self.figures_dir, f"{self.data_root}_BSMD_energy_map.png")
-        plt.savefig(fname)
+        plt.savefig(fname, dpi=FIG_DPI, bbox_inches="tight")
         plt.close(fig)
         print(f"Energy map saved to {fname}")
 
@@ -735,6 +820,7 @@ class BSMDAnalyzer(BaseAnalyzer):
         self.compute_fft_blocks()
         self.perform_bsmd()  # Calls the renamed method
         self.save_results()
+        self.close()  # Release disk-backed resources if any
         print(f"Total BSMD runtime: {time.time() - start_total_time:.2f} s")
         print_summary("BSMD", self.results_dir, self.figures_dir)
 
@@ -770,7 +856,7 @@ if __name__ == "__main__":
                 overlap=0.5,
                 results_dir=results_dir,
                 figures_dir=figures_dir,
-                data_loader=lambda fp: loader.load(fp, field=field),
+                data_loader=lambda fp, _f=field: loader.load(fp, field=_f),
                 spatial_weight_type="uniform",
                 use_static_triads=True,
                 static_triads=ALL_TRIADS,
@@ -819,6 +905,7 @@ if __name__ == "__main__":
                     analyzer.plot_energy_map()
             if run_all:
                 print_summary("BSMD", analyzer.results_dir, analyzer.figures_dir)
+            analyzer.close()
         exit(0)
     else:
         if "jet" in data_file.lower():

@@ -1,14 +1,366 @@
 [
   {
     "case": "cavity",
+    "method": "pod",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 0.02406183400307782,
+    "time_compute": 0.5349777410010574,
+    "time_total": 6.64450164300797,
+    "n_snapshots": 4000,
+    "n_spatial": 260,
+    "n_modes": 10,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated",
+      "generated",
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "cavity",
+    "method": "dmd",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 0.022578235002583824,
+    "time_compute": 0.0979885090055177,
+    "time_total": 3.20297221999499,
+    "n_snapshots": 4000,
+    "n_spatial": 260,
+    "n_modes": 10,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated",
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "cavity",
+    "method": "spod",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 0.022585590995731764,
+    "time_compute": 0.22280428299563937,
+    "time_total": 2.042842893002671,
+    "n_snapshots": 4000,
+    "n_spatial": 260,
+    "n_modes": 129,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "cavity",
+    "method": "bsmd",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 0.022821364997071214,
+    "time_compute": 0.6413845850038342,
+    "time_total": 2.573368190001929,
+    "n_snapshots": 4000,
+    "n_spatial": 260,
+    "n_modes": 61,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "cavity",
     "method": "stpod",
     "case_type": "experimental",
     "success": true,
-    "time_load": 0.026562861166894436,
-    "time_compute": 1.1379913329146802,
-    "time_total": 10.549418583977968,
+    "time_load": 0.022987652992014773,
+    "time_compute": 0.569437840997125,
+    "time_total": 5.307182956996257,
     "n_snapshots": 4000,
     "n_spatial": 260,
+    "n_modes": 10,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated",
+      "generated",
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "jet_small",
+    "method": "pod",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 0.06891477899625897,
+    "time_compute": 0.8531887889985228,
+    "time_total": 5.25066962899291,
+    "n_snapshots": 1000,
+    "n_spatial": 1760,
+    "n_modes": 10,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated",
+      "generated",
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "jet_small",
+    "method": "dmd",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 0.06889860499359202,
+    "time_compute": 0.49968355998862535,
+    "time_total": 2.4972368879971327,
+    "n_snapshots": 1000,
+    "n_spatial": 1760,
+    "n_modes": 10,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated",
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "jet_small",
+    "method": "spod",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 0.06877941600396298,
+    "time_compute": 0.15964450599858537,
+    "time_total": 2.3557367189932847,
+    "n_snapshots": 1000,
+    "n_spatial": 1760,
+    "n_modes": 65,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "jet_small",
+    "method": "bsmd",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 0.06883379300415982,
+    "time_compute": 0.692288425998413,
+    "time_total": 3.8907695170055376,
+    "n_snapshots": 1000,
+    "n_spatial": 1760,
+    "n_modes": 61,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "jet_small",
+    "method": "stpod",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 0.0687486069946317,
+    "time_compute": 1.294287965996773,
+    "time_total": 5.430553357989993,
+    "n_snapshots": 1000,
+    "n_spatial": 1760,
+    "n_modes": 10,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated",
+      "generated",
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "jet",
+    "method": "pod",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 0.8241784309939248,
+    "time_compute": 8.673372942997958,
+    "time_total": 13.466254266997566,
+    "n_snapshots": 5000,
+    "n_spatial": 6825,
+    "n_modes": 10,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated",
+      "generated",
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "jet",
+    "method": "dmd",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 0.8255842080106959,
+    "time_compute": 37.10534820301109,
+    "time_total": 40.00967967801262,
+    "n_snapshots": 5000,
+    "n_spatial": 6825,
+    "n_modes": 10,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated",
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "jet",
+    "method": "spod",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 0.8240776020102203,
+    "time_compute": 3.32147799100494,
+    "time_total": 30.40047636500094,
+    "n_snapshots": 5000,
+    "n_spatial": 6825,
+    "n_modes": 129,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "jet",
+    "method": "bsmd",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 0.8275122590130195,
+    "time_compute": 14.309753916997579,
+    "time_total": 19.945453533000546,
+    "n_snapshots": 5000,
+    "n_spatial": 6825,
+    "n_modes": 61,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "jet",
+    "method": "stpod",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 0.8254466599901207,
+    "time_compute": 21.905751817001146,
+    "time_total": 26.793629159001284,
+    "n_snapshots": 5000,
+    "n_spatial": 6825,
+    "n_modes": 10,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated",
+      "generated",
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "cylinder_wake_compressible",
+    "method": "pod",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 1.6791650420054793,
+    "time_compute": 5.750578705992666,
+    "time_total": 12.260054379003122,
+    "n_snapshots": 3000,
+    "n_spatial": 40800,
+    "n_modes": 10,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated",
+      "generated",
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "cylinder_wake_compressible",
+    "method": "dmd",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 1.6837628299981588,
+    "time_compute": 28.143754960998194,
+    "time_total": 33.19224217800365,
+    "n_snapshots": 3000,
+    "n_spatial": 40800,
+    "n_modes": 10,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated",
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "cylinder_wake_compressible",
+    "method": "spod",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 1.6726344909984618,
+    "time_compute": 12.07391411800927,
+    "time_total": 109.18524467200041,
+    "n_snapshots": 3000,
+    "n_spatial": 40800,
+    "n_modes": 65,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "cylinder_wake_compressible",
+    "method": "bsmd",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 1.666744945992832,
+    "time_compute": 52.44925130800402,
+    "time_total": 56.24935333800386,
+    "n_snapshots": 3000,
+    "n_spatial": 40800,
+    "n_modes": 61,
+    "error": "",
+    "figures": [
+      "generated",
+      "generated"
+    ]
+  },
+  {
+    "case": "cylinder_wake_compressible",
+    "method": "stpod",
+    "case_type": "experimental",
+    "success": true,
+    "time_load": 1.681400792003842,
+    "time_compute": 46.198500819999026,
+    "time_total": 54.16433101000439,
+    "n_snapshots": 3000,
+    "n_spatial": 40800,
     "n_modes": 10,
     "error": "",
     "figures": [

@@ -683,7 +683,7 @@ def print_summary(results: list) -> None:
         for m in methods:
             header += f" {m.upper():>7s} |"
         print(header)
-        print("|" + "-" * 19 + "|" + ("|" + "-" * 9) * len(methods) + "|")
+        print("|" + "-" * 19 + "|" + ("-" * 9 + "|") * len(methods))
 
         for case in cases:
             row = f"| {case:<18} |"
